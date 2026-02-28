@@ -184,7 +184,7 @@ GThread::yield()
 void *
 GThread::current()
 {
-  return (void*) GetCurrentThreadId();
+  return (void*)(uintptr_t)GetCurrentThreadId();
 }
 
 struct thr_waiting {
@@ -446,8 +446,10 @@ GThread::create(void (*entry)(void*), void *arg)
 void 
 GThread::terminate()
 {
+#ifndef __ANDROID__
   if (xentry || xarg)
     pthread_cancel(hthr);
+#endif
 }
 
 int

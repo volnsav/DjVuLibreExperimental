@@ -96,10 +96,30 @@ pathexpand()
       IFS=':' read tmpdir tmpvar <<EOF
 $tmpvar
 EOF
-      test -x $tmpdir/$1 && echo $tmpdir/$1
+      test -x "$tmpdir/$1" && echo "$tmpdir/$1"
     done
 }
 
+psdvifix=
+checkpsdvifix()
+{
+    if [ -z "$psdvifix" ] 
+    then
+        psdvifix=psdvifix.ps
+        if ( "$gsdjvu" 2>&1 -dNODISPLAY -f psdvifix.ps -c quit | \
+              grep -q /undefinedfilename )
+        then
+            psdvifix=no
+        elif ( "$gsdjvu" 2>&1 -dNODISPLAY -f psdvifix.ps -c quit | \
+              grep -q WRITESYSTEMDICT )
+        then
+            psdvifix=no
+        fi
+    fi
+    test "$psdvifix" != no
+}
+
+djvutext=
 checkps2utf8()
 {
     if [ -z "$djvutext" ] 
@@ -117,20 +137,26 @@ checkps2utf8()
 EOF
         fi
     fi
-    test "$djvutext" != no && test -r "$djvutext"  
+    test "$djvutext" != no
 }
+
+
 
 
 # Step 2a -- locate gsdjvu executable
 
 gsdjvu=
-for gs in ${GSDJVU} `pathexpand gs` `pathexpand gsdjvu`
+while read gs
 do
   if [ -z "$gsdjvu" ] && ( "$gs" -h 2>&1 | grep -q djvusep )
   then
      gsdjvu="$gs"
   fi
-done
+done <<EOF
+${GSDJVU}
+`pathexpand gs`
+`pathexpand gsdjvu`
+EOF
 
 if [ -z "$gsdjvu" ]
 then
@@ -148,13 +174,17 @@ fi
 # Step 2b -- locate csepdjvu executable
 
 csepdjvu=
-for cs in ${CSEPDJVU} `pathexpand csepdjvu` `pathexpand msepdjvu`
+while read cs
 do
   if [ -z "$csepdjvu" ] && ( "$cs" -h 2>&1 | grep -q quality )
   then
       csepdjvu="$cs"
   fi
-done
+done <<EOF
+${CSEPDJVU}
+`pathexpand csepdjvu`
+`pathexpand msepdjvu`
+EOF
 
 if [ -z "$csepdjvu" ]
 then
@@ -171,18 +201,21 @@ fi
 # Step 2c -- locate djvused executable
 
 djvused=
-for ds in ${DJVUSED} `pathexpand djvused`
+while read ds
 do
     if [ -z "$djvused" ] && ( "$ds" 2>&1 | grep -q -i djvulibre )
     then
         djvused="$ds"
     fi
-done
+done <<EOF
+${DJVUSED}
+`pathexpand djvused`
+EOF
 
 # Step 2d -- locate pdftotext executable
 
 pdftotext=
-for pt in ${PDFTOTEXT} `pathexpand pdftotext`
+while read pt
 do
   if [ -z "$pdftotext" ] && \
      ( "$pt" -bbox foo.pdf 2>&1 | grep -q foo.pdf )
@@ -190,7 +223,10 @@ do
   then
       pdftotext="$pt"
   fi
-done
+done <<EOF
+${PDFTOTEXT}
+`pathexpand pdftotext`
+EOF
 
 
 # Step 3 -- process arguments
@@ -205,7 +241,6 @@ gsepsf="-dEPSCrop"
 gsverbosity=
 csepverbosity='-v'
 dsedverbosity=
-djvutext=
 infile=
 outfile=
 run=
@@ -230,8 +265,8 @@ do
       --check)
           echo 1>&2 "Using: $gsdjvu"
           echo 1>&2 "  and: $csepdjvu"
-          test -n "$pdftotext" && echo 1>&2 "  and: $pdftotext"
           test -n "$djvused" && echo 1>&2 "  and: $djvused"
+          test -n "$pdftotext" && echo 1>&2 "  and: $pdftotext"
           exit 0
           ;;
       --dpi=[0-9]*)
@@ -277,19 +312,23 @@ do
           gsepsf="-dEPSCrop"
           ;;
       --words)
-          if checkps2utf8; then
+          gsarg0="$gsarg0 -dProvideUnicode -dExtractText"
+          if checkpsdvifix; then
+            gsarg1="-f $psdvifix"
+          elif checkps2utf8; then
+            # Modern gs do not like DELAYBIND
             gsarg0="$gsarg0 -dDELAYBIND -dWRITESYSTEMDICT"
             gsarg1="-f $djvutext"
-          else
-            gsarg0="$gsarg0 -dProvideUnicode -dExtractText"
           fi
           ;;
       --lines)
-          if checkps2utf8; then 
+          gsarg0="$gsarg0 -dProvideUnicode -dExtractText"
+          if checkpsdvifix; then
+            gsarg1="-f $psdvifix"
+          elif checkps2utf8; then
+            # Modern gs do not like DELAYBIND
             gsarg0="$gsarg0 -dDELAYBIND -dWRITESYSTEMDICT"
             gsarg1="-f $djvutext"
-          else
-            gsarg0="$gsarg0 -dProvideUnicode -dExtractText"
           fi
           csepargs="$csepargs -t"
           ;;
@@ -389,8 +428,8 @@ if [ "$sepfile" = "yes" ]
 then
   backend="$outfile"
 else
-  backend="| "'"'"$csepdjvu"'"'" -d $dpi"
-  backend="$backend $csepverbosity $csepargs - "'"'"$outfile"'"'
+  backend="| '$csepdjvu' -d $dpi"
+  backend="$backend $csepverbosity $csepargs - '$outfile'"
 fi
 
 
@@ -403,7 +442,7 @@ case "$infile" in
         else
           $run gzip -d -c '"'"$infile"'"' '|' "" \
              "$gsdjvu" "-r$dpi" $gsverbosity $gsprinted $gsepsf "" \
-             "-sOutputFile=""'""$backend""'" "" \
+             '"'"-sOutputFile=$backend"'"' \
              $gsarg0 $gsarg1 $gsarg2 -_ -c quit
         fi
         ;;
@@ -414,7 +453,7 @@ case "$infile" in
             -f "$infile" -c quit
         else
           $run "$gsdjvu" "-r$dpi" $gsverbosity $gsprinted $gsepsf "" \
-             "-sOutputFile=""'""$backend""'" "" \
+             '"'"-sOutputFile=$backend"'"' \
              $gsarg0 $gsarg1 $gsarg2 -f '"'"$infile"'"' -c quit
         fi
         ;;
@@ -464,7 +503,7 @@ EOF
 function _esc_init() {
     _ctrl = ""
     for (i=1; i<32; i++) { _ctrl = _ctrl sprintf("%c",i) }
-    _esc = "[\"\\&" _ctrl "]"
+    _esc = "[\"\\\\&" _ctrl "]"
     _ctrl = "[" _ctrl "]"
 }
 

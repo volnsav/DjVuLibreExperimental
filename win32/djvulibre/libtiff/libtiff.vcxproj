@@ -20,10 +20,12 @@
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <CharacterSet>MultiByte</CharacterSet>
     <WholeProgramOptimization>true</WholeProgramOptimization>
+    <PlatformToolset>v142</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <CharacterSet>MultiByte</CharacterSet>
+    <PlatformToolset>v142</PlatformToolset>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -130,6 +132,7 @@
     <ClCompile Include="..\..\tiff\tiff\libtiff\tif_warning.c" />
     <ClCompile Include="..\..\tiff\tiff\libtiff\tif_write.c" />
     <ClCompile Include="..\..\tiff\tiff\libtiff\tif_zip.c" />
+    <ClCompile Include="..\..\tiff\tiff\port\snprintf.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\tiff\tiff\libtiff\t4.h" />

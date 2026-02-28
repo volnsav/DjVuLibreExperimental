@@ -415,11 +415,11 @@ CCImage::merge_and_split_ccs(int smallsize, int largesize)
       CC* cc = &ccs[ccid];
       if (cc->nrun <= 0) continue;
       Grid_x_Color key;
-      key.color = cc->color;
       int ccheight = cc->bb.height();
       int ccwidth = cc->bb.width();
       if (ccheight<=smallsize && ccwidth<=smallsize)
         {
+          key.color = cc->color;
           key.gridi = (cc->bb.ymin+cc->bb.ymax)/splitsize/2;
           key.gridj = (cc->bb.xmin+cc->bb.xmax)/splitsize/2;
           int newccid = makeccid(key, map, ncc);
@@ -428,6 +428,7 @@ CCImage::merge_and_split_ccs(int smallsize, int largesize)
         }
       else if (ccheight>=largesize || ccwidth>=largesize)
         {
+          key.color = -ccid;
           for(int runid=cc->frun; runid<cc->frun+cc->nrun; runid++)
             {
               Run *r = & runs[runid];
@@ -683,7 +684,6 @@ cpaldjvu(ByteStream *ibs, GURL &urlout, const cpaldjvuopts &opts)
                        bgcolor.r, bgcolor.g, bgcolor.b);
   
   // Fill CCImage with color runs
-  int xruncount=0,yruncount=0;
   CCImage rimg(w, h);
   int *line;
   GPBuffer<int> gline(line,w);
@@ -710,12 +710,9 @@ cpaldjvu(ByteStream *ibs, GURL &urlout, const cpaldjvuopts &opts)
           while (x<w && line[x]==index) { x++; }
           if (index != bgindex)
             {
-              xruncount++;
               rimg.add_single_run(y, x1, x-1, index);
             }
         }
-      for(x=0;x<w;x++)
-        if(prevline[x] != line[x]) yruncount++;
       gprevline.swap(gline);
     }
   ginput = 0; //save memory

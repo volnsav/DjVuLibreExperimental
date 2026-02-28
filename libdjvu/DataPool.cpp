@@ -790,7 +790,8 @@ DataPool::create(const GP<DataPool> & pool, int start, int length)
 {
   DEBUG_MSG("DataPool::DataPool: pool=" << (void *)((DataPool *)pool) << " start=" << start << " length= " << length << "\n");
   DEBUG_MAKE_INDENT(3);
-
+  if (!pool)
+    G_THROW( ERR_MSG("DataPool.zero_DataPool") );
   DataPool *xpool=new DataPool();
   GP<DataPool> retval=xpool;
   xpool->init();
@@ -1737,7 +1738,7 @@ PoolByteStream::seek(long offset, int whence, bool nothrow)
   {
     case SEEK_CUR:
       offset+=position;
-      // fallthrough;
+      /* FALLTHRU */
     case SEEK_SET:
       if(offset<position)
       {

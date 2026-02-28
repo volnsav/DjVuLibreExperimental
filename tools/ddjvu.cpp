@@ -139,6 +139,7 @@ const char  *programname = 0;
 const char  *inputfilename = 0;
 const char  *outputfilename = 0;
 
+size_t pagefilenamesz = 0;
 char *pagefilename = 0;
 #if HAVE_TIFF2PDF
 char *tempfilename = 0;
@@ -279,7 +280,7 @@ render(ddjvu_page_t *page, int pageno)
       prect.h = (ih * 100) / dpi;
     }
   /* Process aspect ratio */
-  if (flag_aspect <= 0)
+  if (flag_aspect <= 0 && iw>0 && ih>0)
     {
       double dw = (double)iw / prect.w;
       double dh = (double)ih / prect.h;
@@ -393,8 +394,11 @@ render(ddjvu_page_t *page, int pageno)
   } else if (style == DDJVU_FORMAT_GREY8)
     rowsize = rrect.w;
   else
-    rowsize = rrect.w * 3; 
-  if (! (image = (char*)malloc(rowsize * rrect.h)))
+    rowsize = rrect.w * 3;
+  size_t bufsize = (size_t)rowsize * rrect.h;
+  if (bufsize / rowsize != rrect.h)
+    die(i18n("Integer overflow when allocating image buffer for page %d"), pageno);
+  if (! (image = (char*)malloc(bufsize)))
     die(i18n("Cannot allocate image buffer for page %d"), pageno);
 
   /* Render */
@@ -483,9 +487,9 @@ render(ddjvu_page_t *page, int pageno)
         TIFFSetField(tiff, TIFFTAG_IMAGEWIDTH, (uint32)rrect.w);
         TIFFSetField(tiff, TIFFTAG_IMAGELENGTH, (uint32)rrect.h);
         TIFFSetField(tiff, TIFFTAG_XRESOLUTION, 
-		     (float)((dpi*rrect.w+iw/2)/iw));
+		     (float)((dpi*prect.w+iw/2)/iw));
         TIFFSetField(tiff, TIFFTAG_YRESOLUTION, 
-		     (float)((dpi*rrect.h+ih/2)/ih));
+		     (float)((dpi*prect.h+ih/2)/ih));
         TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
         TIFFSetField(tiff, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
 # ifdef CCITT_SUPPORT
@@ -569,7 +573,11 @@ openfile(int pageno)
   const char *filename = outputfilename;
   if (flag_eachpage)
     {
+#if HAVE_SNPRINTF
+      snprintf(pagefilename, pagefilenamesz, filename, pageno);
+#else
       sprintf(pagefilename, filename, pageno);
+#endif
       filename = pagefilename;
     }
   
@@ -653,7 +661,11 @@ closefile(int pageno)
   const char *filename = outputfilename;
   if (flag_eachpage && pageno > 0)
     {
+#if HAVE_SNPRINTF
+      snprintf(pagefilename, pagefilenamesz, filename, pageno);
+#else
       sprintf(pagefilename, filename, pageno);
+#endif
       filename = pagefilename;
     }
 
@@ -885,7 +897,7 @@ usage()
          "Usage: ddjvu [options] [<djvufile> [<outputfile>]]\n\n"
          "Options:\n"
          "  -verbose          Print various informational messages.\n"
-         "  -format=FMT       Select output format: pbm,pgm,ppm,pnm,rle,tiff.\n"
+         "  -format=FMT       Select output format: pbm,pgm,ppm,pnm,rle,tiff,pdf.\n"
          "  -scale=N          Select display scale.\n"
          "  -size=WxH         Select size of rendered image.\n"
          "  -subsample=N      Select direct subsampling factor.\n"
@@ -1190,10 +1202,10 @@ main(int argc, char **argv)
     flag_pagespec = (flag_format) ? "1-$" : "1";
   if (flag_eachpage)
     {
-      int sz = check_eachpage(outputfilename);
-      if (! sz)
+      pagefilenamesz = check_eachpage(outputfilename);
+      if (! pagefilenamesz)
         die(i18n("Flag -eachpage demands a '%%d' specification in the output file name."));
-      pagefilename = (char*)malloc(sz);
+      pagefilename = (char*)malloc(pagefilenamesz);
       if (! pagefilename)
         die(i18n("Out of memory"));
     }

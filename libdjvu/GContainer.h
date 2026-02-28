@@ -550,52 +550,61 @@ public:
 template <class TYPE> void
 GArrayTemplate<TYPE>::sort(int lo, int hi)
 {
-  if (hi <= lo)
-    return;
-  if (hi > hibound || lo<lobound)
-    G_THROW( ERR_MSG("GContainer.illegal_subscript") );
   TYPE *data = (TYPE*)(*this);
-  // Test for insertion sort
-  if (hi <= lo + 50)
+  while(true)
     {
-      for (int i=lo+1; i<=hi; i++)
+      if (hi <= lo)
+        return;
+      if (hi > hibound || lo<lobound)
+        G_THROW( ERR_MSG("GContainer.illegal_subscript") );
+      // Test for insertion sort
+      if (hi <= lo + 50)
         {
-          int j = i;
-          TYPE tmp = data[i];
-          while ((--j>=lo) && !(data[j]<=tmp))
-            data[j+1] = data[j];
-          data[j+1] = tmp;
+          for (int i=lo+1; i<=hi; i++)
+            {
+              int j = i;
+              TYPE tmp = data[i];
+              while ((--j>=lo) && !(data[j]<=tmp))
+                data[j+1] = data[j];
+              data[j+1] = tmp;
+            }
+          return;
         }
-      return;
-    }
-  // -- determine suitable quick-sort pivot
-  TYPE tmp = data[lo];
-  TYPE pivot = data[(lo+hi)/2];
-  if (pivot <= tmp)
-    { tmp = pivot; pivot=data[lo]; }
-  if (data[hi] <= tmp)
-    { pivot = tmp; }
-  else if (data[hi] <= pivot)
-    { pivot = data[hi]; }
-  // -- partition set
-  int h = hi;
-  int l = lo;
-  while (l < h)
-    {
-      while (! (pivot <= data[l])) l++;
-      while (! (data[h] <= pivot)) h--;
-      if (l < h)
+      // -- determine median-of-three pivot
+      TYPE tmp = data[lo];
+      TYPE pivot = data[(lo+hi)/2];
+      if (pivot <= tmp)
+        { tmp = pivot; pivot=data[lo]; }
+      if (data[hi] <= tmp)
+        { pivot = tmp; }
+      else if (data[hi] <= pivot)
+        { pivot = data[hi]; }
+      // -- partition set
+      int h = hi;
+      int l = lo;
+      while (l < h)
         {
-          tmp = data[l];
-          data[l] = data[h];
-          data[h] = tmp;
-          l = l+1;
-          h = h-1;
+          while (! (pivot <= data[l])) l++;
+          while (! (data[h] <= pivot)) h--;
+          if (l < h)
+            {
+              tmp = data[l];
+              data[l] = data[h];
+              data[h] = tmp;
+              l = l+1;
+              h = h-1;
+            }
+        }
+      // -- recurse, small partition first
+      //    tail-recursion elimination
+      if (h - lo <= hi - l) {
+        sort(lo,h);
+        lo = l; // sort(l,hi)
+      } else {
+        sort(l,hi);
+        hi = h; // sort(lo,h)
       }
     }
-  // -- recursively restart
-  sort(lo, h);
-  sort(l, hi);
 }
 
 template<class TYPE> inline TYPE&
@@ -1161,7 +1170,7 @@ GSetImpl<K>::get_or_create(const K &key)
   if (m) return m;
   SNode *n = (SNode*) operator new (sizeof(SNode));
 #if GCONTAINER_ZERO_FILL
-  memset(n, 0, sizeof(SNode));
+  memset((void*)n, 0, sizeof(SNode));
 #endif
   new ((void*)&(n->key)) K ( key );
   n->hashcode = hash((const K&)(n->key));
@@ -1198,7 +1207,7 @@ GMapImpl<K,TI>::get_or_create(const K &key)
   if (m) return m;
   MNode *n = (MNode*) operator new (sizeof(MNode));
 #if GCONTAINER_ZERO_FILL
-  memset(n, 0, sizeof(MNode));
+  memset((void*)n, 0, sizeof(MNode));
 #endif
   new ((void*)&(n->key)) K  (key);
   new ((void*)&(n->val)) TI ();

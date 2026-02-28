@@ -7,11 +7,10 @@
 
 ;Used software:
 ;--------------
-;NSIS 2.46 (http://sourceforge.net/projects/nsis/files/NSIS%202/2.46/nsis-2.46-setup.exe/download)
-;add-on NSIS 2.46+log (http://sourceforge.net/projects/nsis/files/NSIS%202/2.46/nsis-2.46-log.zip/download)
-;HM NIS Edit 2.0.3 -- it's good IDE for NSI building (http://prdownloads.sourceforge.net/hmne/nisedit2.0.3.exe?download)
-;with 2.46 NSIS update (http://nsis.sourceforge.net/mediawiki/images/6/64/HMnsiSyntaxConfig.zip)
-;Notepad ++ 6.3 (http://download.tuxfamily.org/notepadplus/6.3/npp.6.3.Installer.exe)
+;NSIS 3.05 (http://sourceforge.net/projects/nsis/files/)
+;add-on NSIS 3.05+log (http://sourceforge.net/projects/nsis/files/NSIS%203/3.05/nsis-3.05-log.zip)
+;HM NIS Edit 2.0.3 -- it's good IDE for NSI building
+;
 ;Used docs
 ;---------
 ;NSIS docs and manuals at http://forum.oszone.net/thread-248731.html
@@ -26,14 +25,15 @@
 ;prepare names
 
 RequestExecutionLevel admin
+Unicode true
 
 !define NSI_VER "9.2"
 !define DJVULIBRE_NAME "DjVuLibre"
-!define DJVULIBRE_VERSION "3.5.27"
+!define DJVULIBRE_VERSION "3.5.28"
 !define CLASSES "Software\Classes\"
 !define DJVIEW_NAME "DjView"
-!define DJVIEW_VERSION "4.10.4"
-!define VI_PRODUCT_VERSION "4.10.4.0"
+!define DJVIEW_VERSION "4.12"
+!define VI_PRODUCT_VERSION "4.12.0.0"
 
 !define PRODUCT_NAME "${DJVULIBRE_NAME} ${DJVIEW_NAME}"
 !define UNINST_NAME "${DJVULIBRE_NAME}+${DJVIEW_NAME}" ; for uninstaller
@@ -160,6 +160,7 @@ ShowUnInstDetails show
 ;language files
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "Russian"
+!insertmacro MUI_LANGUAGE "Spanish"
 
 ; end MUI 1.67 compatible ------
 
@@ -234,6 +235,8 @@ Section "-!DjVuLibre" scDjVuLibre
   File "djvulibre*.ns?"
   File "COPYING.txt"
   Logset off
+  ;; call vcredist
+  ExecWait '"$INSTDIR/vcredist_x86.exe" /passive /norestart'
 SectionEnd
 
 ;--- registry
@@ -566,6 +569,7 @@ SectionEnd
 
 !include "djvulibrelang-ru.nsh"
 !include "djvulibrelang-en.nsh"
+!include "djvulibrelang-es.nsh"
 
 ; Section descriptions set
 

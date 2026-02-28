@@ -134,7 +134,7 @@ class symtable_t
 public:
   int nelems;
   int nbuckets;
-  struct sym { unsigned int h; struct sym *l; char *n; };
+  struct sym { unsigned int h; struct sym *l; char *n; miniexp_t v; };
   struct sym **buckets;
   symtable_t();
   ~symtable_t();
@@ -201,6 +201,7 @@ symtable_t::lookup(const char *n, bool create)
       r->h = h;
       r->l = buckets[i];
       r->n = new char [1+strlen(n)];
+      r->v = (miniexp_t)(((size_t)r)|((size_t)2));
       strcpy(r->n, n);
       buckets[i] = r;
       if ( 2 * nelems > 3 * nbuckets)
@@ -220,7 +221,7 @@ miniexp_to_name(miniexp_t p)
     {
       struct symtable_t::sym *r;
       r = ((symtable_t::sym*)(((size_t)p)&~((size_t)3)));
-      return (r) ? r->n : "##(dummy)";
+      return (r && r->v == p) ? r->n : "##(dummy)";
     }
   return 0;
 }
@@ -236,7 +237,7 @@ miniexp_symbol(const char *name)
         symbols = new symtable_t;
     }
   r = symbols->lookup(name, true);
-  return (miniexp_t)(((size_t)r)|((size_t)2));
+  return r->v;
 }
 
 
@@ -319,6 +320,7 @@ gctls_t::~gctls_t()
 END_ANONYMOUS_NAMESPACE
 
 #if USE_PTHREADS
+
 // Manage thread specific data with pthreads
 static pthread_key_t gctls_key;
 static pthread_once_t gctls_once;
@@ -353,6 +355,7 @@ static gctls_t *gctls() {
 # endif
 
 #elif USE_WINTHREADS 
+
 // Manage thread specific data with win32
 #if defined(_MSC_VER) && defined(USE_MSVC_TLS)
 // -- Pre-vista os sometimes crashes on this.
@@ -382,17 +385,24 @@ static void NTAPI gctls_cb(PVOID, DWORD dwReason, PVOID) {
     {CSLOCK(r);TlsFree(tlsIndex);tlsIndex=TLS_OUT_OF_INDEXES;}
 }
 # endif
-// -- Very black magic to clean tls variables.
-# ifdef _M_IX86
-#  pragma comment (linker, "/INCLUDE:_tlscb")
+// -- Very black magic to clean the TLS variables
+# if !defined(_MSC_VER)
+#  warning "This only works with MSVC. Memory leak otherwise"
+# elif !defined(MINILISPAPI_EXPORT)
+#  pragma message("This only works for a DLL. Memory leak otherwise")
 # else
-#  pragma comment (linker, "/INCLUDE:tlscb")
-# endif
-# pragma const_seg(".CRT$XLB")
+#  ifdef _M_IX86
+#   pragma comment (linker, "/INCLUDE:_tlscb")
+#  else
+#   pragma comment (linker, "/INCLUDE:tlscb")
+#  endif
+#  pragma const_seg(".CRT$XLB")
 extern "C" PIMAGE_TLS_CALLBACK tlscb = gctls_cb;
-# pragma const_seg()
+#  pragma const_seg()
+# endif
 
 #else
+
 // No threads
 static gctls_t *gctls() {
   static gctls_t g;
@@ -894,8 +904,13 @@ char *
 miniobj_t::pname() const
 {
   const char *cname = miniexp_to_name(classof());
-  char *res = new char[strlen(cname)+24];
+  int lres = strlen(cname)+24;
+  char *res = new char[lres];
+#if HAVE_SNPRINTF
+  snprintf(res,lres,"#%s:<%p>",cname,this);
+#else
   sprintf(res,"#%s:<%p>",cname,this);
+#endif
   return res;
 }
 
@@ -1009,13 +1024,15 @@ char_quoted(int c, int flags)
 }
 
 static bool
-char_utf8(int &c, const char* &s)
+char_utf8(int &c, const char* &s, size_t &len)
 {
   if (c < 0xc0)
     return (c < 0x80);
   if (c >= 0xf8)
     return false;
   int n = (c < 0xe0) ? 1 : (c < 0xf0) ? 2 : 3;
+  if ((size_t)n > len)
+    return false;
   int x = c & (0x3f >> n);
   for (int i=0; i<n; i++)
     if ((s[i] & 0xc0) == 0x80)
@@ -1029,6 +1046,7 @@ char_utf8(int &c, const char* &s)
     return false;
   if (x >= 0xd800 && x <= 0xdfff)
     return false;
+  len -= n;
   s += n;
   c = x;
   return true;
@@ -1053,7 +1071,7 @@ print_c_string(const char *s, char *d, int flags, size_t len)
       c = (unsigned char)(*s++);
       if (char_quoted(c, flags))
         {
-          char buffer[10];
+          char buffer[16]; /* 10+1 */
           static const char *tr1 = "\"\\tnrbf";
           static const char *tr2 = "\"\\\t\n\r\b\f";
           buffer[0] = buffer[1] = 0;
@@ -1063,8 +1081,18 @@ print_c_string(const char *s, char *d, int flags, size_t len)
               buffer[0] = tr1[i];
           if (buffer[0] == 0 && c >= 0x80 
               && (flags & (miniexp_io_u4escape | miniexp_io_u6escape))
-              && char_utf8(c, s) )
+              && char_utf8(c, s, len) )
             {
+#if HAVE_SNPRINTF
+              if (c <= 0xffff && (flags & miniexp_io_u4escape))
+                snprintf(buffer,sizeof(buffer),"u%04X", c);
+              else if (flags & miniexp_io_u6escape) // c# style
+                snprintf(buffer,sizeof(buffer),"U%06X", c);
+              else if (flags & miniexp_io_u4escape) // json style
+                snprintf(buffer,sizeof(buffer),"u%04X\\u%04X", 
+                        0xd800+(((c-0x10000)>>10)&0x3ff), 
+                        0xdc00+(c&0x3ff));
+#else
               if (c <= 0xffff && (flags & miniexp_io_u4escape))
                 sprintf(buffer,"u%04X", c);
               else if (flags & miniexp_io_u6escape) // c# style
@@ -1073,12 +1101,17 @@ print_c_string(const char *s, char *d, int flags, size_t len)
                 sprintf(buffer,"u%04X\\u%04X", 
                         0xd800+(((c-0x10000)>>10)&0x3ff), 
                         0xdc00+(c&0x3ff));
+#endif
             }
           if (buffer[0] == 0 && c == 0)
             if (*s < '0' || *s > '7')
               buffer[0] = '0';
           if (buffer[0] == 0)
+#if HAVE_SNPRINTF
+            snprintf(buffer, sizeof(buffer), "%03o", c);
+#else
             sprintf(buffer, "%03o", c);
+#endif
           for (int i=0; buffer[i]; i++)
             char_out(buffer[i], d, n);
           continue;
@@ -1103,7 +1136,7 @@ const char *
 miniexp_to_str(miniexp_t p)
 {
   const char *s = 0;
-  size_t l = miniexp_to_lstr(p, &s);
+  miniexp_to_lstr(p, &s);
   return s;
 }
 
@@ -1243,9 +1276,15 @@ char *
 minifloat_t::pname() const
 {
   char *r = new char[64];
+#if HAVE_SNPRINTF
+  snprintf(r,64,"%f",val);
+  if (! str_looks_like_double(r))
+    snprintf(r,64,"+%f",val);
+#else
   sprintf(r,"%f",val);
   if (! str_looks_like_double(r))
     sprintf(r,"+%f",val);
+#endif
   return r;
 }
 
@@ -1451,7 +1490,11 @@ printer_t::print(miniexp_t p)
     }
   else if (miniexp_numberp(p))
     {
+#if HAVE_SNPRINTF
+      snprintf(buffer, sizeof(buffer), "%d", miniexp_to_int(p));
+#else
       sprintf(buffer, "%d", miniexp_to_int(p));
+#endif
       mlput(buffer);
     }
   else if (miniexp_symbolp(p))
@@ -2017,7 +2060,7 @@ read_miniexp(miniexp_io_t *io, int &c)
           if (io->p_diezechar && io->p_macroqueue
               && nc >= 0 && nc < 128 && io->p_diezechar[nc])
             {
-              miniexp_t p = io->p_macrochar[nc](io);
+              miniexp_t p = io->p_diezechar[nc](io);
               if (miniexp_length(p) > 0)
                 *io->p_macroqueue = p;
               else if (p)
