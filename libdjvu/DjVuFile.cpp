@@ -565,6 +565,8 @@ DjVuFile::process_incl_chunk(ByteStream & str, int file_num)
   {
     incl_str.setat(incl_str.length()-1, 0);
   }
+  if (!incl_str.is_valid())
+    G_THROW( ERR_MSG("DjVuFile.malformed") );
   
   if (incl_str.length()>0)
   {
