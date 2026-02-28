@@ -216,9 +216,9 @@ You may instead specify an alternate directory with DESTDIR=...
    See the directory win32.
    Populate the zlib, jpeg and tiff directories with
    the open source code suggested in the README files.
-   Check win32/djvulibre/dirs.props to see
+   Check windows/djvulibre/dirs.props to see
    how to name the directories.
-   Then open win32/djvulibre/djvulibre.sln and compile.
+   Then open windows/djvulibre/djvulibre.sln and compile.
 
    Next step would then be to follow the instructions
    in the djview package to create a djview project and
@@ -251,5 +251,4 @@ You may instead specify an alternate directory with DESTDIR=...
    Please refer to the file INSTALL for information
    about the arguments of the script 'configure'.
  
-
 

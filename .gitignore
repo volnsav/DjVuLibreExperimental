@@ -58,6 +58,7 @@
 /xmltools/djvutoxml
 /xmltools/djvuxml.1
 /xmltools/djvuxmlparser
+/windows/build/
 Makefile
 Makefile.in
 stamp-h1
