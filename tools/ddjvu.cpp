@@ -70,6 +70,7 @@
 #include <locale.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <sys/stat.h>
 
 #ifdef UNIX
 # include <sys/time.h>
@@ -619,14 +620,20 @@ openfile(int pageno)
           strcat(tempfilename, ".XXXXXX");
           tiff = 0;
 # ifdef _WIN32
-          if (_mktemp(tempfilename))
-            tiff = TIFFOpen(tempfilename,"w");
+          if (_mktemp_s(tempfilename, strlen(tempfilename) + 1) == 0)
+            {
+              tiffd = _open(tempfilename,
+                            _O_RDWR | _O_CREAT | _O_EXCL | _O_BINARY,
+                            _S_IREAD | _S_IWRITE);
+              if (tiffd >= 0)
+                tiff = TIFFFdOpen(tiffd, tempfilename, "w");
+            }
 # elif HAVE_MKSTEMP
           if ((tiffd = mkstemp(tempfilename)) >= 0)
             tiff = TIFFFdOpen(tiffd, tempfilename, "w");
 # else
           if (mktemp(tempfilename))
-            if ((tiffd = open(tempfilename, O_RDWR|O_CREAT)) >= 0)
+            if ((tiffd = open(tempfilename, O_RDWR|O_CREAT|O_EXCL, 0600)) >= 0)
               tiff = TIFFFdOpen(tiffd, tempfilename, "w");
 # endif
           if (! tiff)

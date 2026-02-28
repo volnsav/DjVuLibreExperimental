@@ -564,6 +564,8 @@ void
 DjVuMessageLookUpNative( 
   char *msg_buffer, const unsigned int buffer_size, const char *message)
 {
+  if (!msg_buffer || buffer_size == 0)
+    return;
   const GNativeString converted(DjVuMessage::LookUpNative( message ));
   if( converted.length() >= buffer_size )
     msg_buffer[0] = '\0';
@@ -579,6 +581,8 @@ void
 DjVuMessageLookUpUTF8( 
   char *msg_buffer, const unsigned int buffer_size, const char *message)
 {
+  if (!msg_buffer || buffer_size == 0)
+    return;
   const GUTF8String converted(DjVuMessage::LookUpUTF8( message ));
   if( converted.length() >= buffer_size )
     msg_buffer[0] = '\0';

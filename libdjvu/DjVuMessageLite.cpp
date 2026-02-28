@@ -419,6 +419,8 @@ DjVuMessageLite::InsertArg( GUTF8String &message,
 void 
 DjVuMessageLite_LookUp( char *msg_buffer, const unsigned int buffer_size, const char *message )
 {
+  if (!msg_buffer || buffer_size == 0)
+    return;
   GUTF8String converted = DjVuMessageLite::LookUpUTF8( message );
   if( converted.length() >= buffer_size )
     msg_buffer[0] = '\0';

@@ -1619,10 +1619,27 @@ GStringRep::vformat(va_list args) const
     ChangeLocale locale(LC_NUMERIC,(isNative()?0:"C"));
     // Format string
 #ifdef USE_VSNPRINTF
-    while(USE_VSNPRINTF(buffer, buflen, fmt, args)<0)
+    for (;;)
       {
-        gbuffer.resize(0);
-        gbuffer.resize(buflen+32768);
+        va_list ap;
+        va_copy(ap, args);
+        const int n = USE_VSNPRINTF(buffer, buflen, fmt, ap);
+        va_end(ap);
+        if (n < 0)
+          {
+            buflen += 32768;
+            gbuffer.resize(0);
+            gbuffer.resize(buflen);
+            continue;
+          }
+        if (n >= buflen)
+          {
+            buflen = n + 1;
+            gbuffer.resize(0);
+            gbuffer.resize(buflen);
+            continue;
+          }
+        break;
       }
     va_end(args);
 #else
