@@ -987,7 +987,7 @@ BSByteStream::Encode::write(const void *buffer, size_t sz)
       // Compute remaining
       int bytes = blocksize - 1 - bptr;
       if (bytes > (int)sz)
-        bytes = sz;
+        bytes = (int)sz;
       // Store date (todo: rle)
       memcpy(data+bptr, buffer, bytes);
       buffer = (void*)((char*)buffer + bytes);

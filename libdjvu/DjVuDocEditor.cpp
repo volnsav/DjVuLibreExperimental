@@ -693,9 +693,9 @@ DjVuDocEditor::insert_file(const GP<DataPool> &file_pool,
          {
             GUTF8String name;
             char buffer[1024];
-            int length;
+            size_t length;
             while((length=iff_in.read(buffer, 1024)))
-               name+=GUTF8String(buffer, length);
+               name+=GUTF8String(buffer, (unsigned int)length);
             while(isspace((unsigned char)name[0]))
             {
               name=name.substr(1,(unsigned int)-1);

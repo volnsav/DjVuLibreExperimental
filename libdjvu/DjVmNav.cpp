@@ -110,7 +110,8 @@ DjVmNav::create(void)
 void 
 DjVmNav::DjVuBookMark::decode(const GP<ByteStream> &gstr)
 {
-  int textsize=0, readsize=0;
+  int textsize=0;
+  size_t readsize=0;
   char *buffer=0;
   ByteStream &bs=*gstr;
   count = bs.read8();

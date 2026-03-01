@@ -66,6 +66,7 @@
 #include "XMLTags.h"
 #include "UnicodeByteStream.h"
 #include <ctype.h>
+#include <limits.h>
 #if HAS_WCTYPE
 #include <wctype.h>
 #endif
@@ -85,13 +86,23 @@ lt_XMLContents::lt_XMLContents(GP<lt_XMLTags> t)
   tag=t;
 }
 
+static unsigned int
+ptrdiff_to_uint(ptrdiff_t value)
+{
+  if (value <= 0)
+    return 0u;
+  if (value > (ptrdiff_t)UINT_MAX)
+    return UINT_MAX;
+  return (unsigned int)value;
+}
+
 static GUTF8String
 getargn(char const tag[], char const *&t)
 {
   char const *s;
   for(s=tag;isspace((unsigned char)(*s));s++);
   for(t=s;(*t)&&((*t)!='/')&&((*t)!='>')&&((*t)!='=')&&!isspace((unsigned char)(*t));++t);
-  return GUTF8String(s,t-s);
+  return GUTF8String(s, ptrdiff_to_uint(t-s));
 }
 
 static GUTF8String
@@ -105,7 +116,7 @@ getargv(char const tag[], char const *&t)
     {
       char const q=*(t++);
       for(s++;(*t)&&((*t)!=q)&&((*t)!='>');++t);
-      retval=GUTF8String(s,t-s);
+      retval=GUTF8String(s, ptrdiff_to_uint(t-s));
       if (t[0] == q)
       {
         ++t;
@@ -113,7 +124,7 @@ getargv(char const tag[], char const *&t)
     }else
     {
       for(t=s;(*t)&&((*t)!='/')&&((*t)!='>')&&!isspace((unsigned char)(*t));++t);
-      retval=GUTF8String(s,t-s);
+      retval=GUTF8String(s, ptrdiff_to_uint(t-s));
     }
   }else
   {
@@ -128,7 +139,7 @@ tagtoname(char const tag[],char const *&t)
   char const *s;
   for(s=tag;isspace((unsigned char)(*s));s++);
   for(t=s;(*t)&&((*t)!='>')&&((*t)!='/')&&!isspace((unsigned char)(*t));++t);
-  return GUTF8String(s,t-s);
+  return GUTF8String(s, ptrdiff_to_uint(t-s));
 }
 
 static inline GUTF8String

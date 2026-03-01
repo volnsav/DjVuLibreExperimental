@@ -1274,7 +1274,7 @@ GBitmap::encode(unsigned char *&pruns,GPBuffer<unsigned char> &gpruns) const
       unsigned char *runs_pos=runs+pos;
       const unsigned char * const runs_pos_start=runs_pos;
       append_line(runs_pos,row,ncolumns);
-      pos+=(size_t)runs_pos-(size_t)runs_pos_start;
+      pos+=(int)(runs_pos-runs_pos_start);
       row -= bytes_per_row;
       n -= 1;
     }
@@ -1695,4 +1695,3 @@ GBitmap::check_border() const
 using namespace DJVU;
 # endif
 #endif
-

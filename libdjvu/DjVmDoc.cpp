@@ -96,9 +96,9 @@ save_file(
         {
           GUTF8String incl_str;
           char buffer[1024];
-          int length;
+          size_t length;
           while((length=iff_in.read(buffer, 1024)))
-            incl_str+=GUTF8String(buffer, length);
+            incl_str+=GUTF8String(buffer, (unsigned int)length);
           // Eat '\n' in the beginning and at the end
           while(incl_str.length() && incl_str[0]=='\n')
           {
@@ -196,10 +196,10 @@ DjVmDoc::insert_file(
    const GP<DataPool> pool(DataPool::create());
       // Cannot connect to a bytestream.
       // Must copy data into the datapool.
-   int nbytes;
+   size_t nbytes;
    char buffer[1024];
    while ((nbytes = data.read(buffer, sizeof(buffer))))
-      pool->add_data(buffer, nbytes);
+      pool->add_data(buffer, (int)nbytes);
    pool->set_eof();
       // Call low level insert
    insert_file(file, pool, pos);
@@ -476,9 +476,9 @@ DjVmDoc::read(ByteStream & str_in)
 
    GP<DataPool> pool=DataPool::create();
    char buffer[1024];
-   int length;
+   size_t length;
    while((length=str_in.read(buffer, 1024)))
-      pool->add_data(buffer, length);
+      pool->add_data(buffer, (int)length);
    pool->set_eof();
 
    read(pool);

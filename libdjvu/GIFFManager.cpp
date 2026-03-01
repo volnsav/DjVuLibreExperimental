@@ -63,6 +63,7 @@
 #include "GIFFManager.h"
 #include "GException.h"
 #include "debug.h"
+#include <limits.h>
 
 
 #ifdef HAVE_NAMESPACES
@@ -71,6 +72,16 @@ namespace DJVU {
 }
 #endif
 #endif
+
+static unsigned int
+ptrdiff_to_uint(ptrdiff_t value)
+{
+  if (value <= 0)
+    return 0u;
+  if (value > (ptrdiff_t)UINT_MAX)
+    return UINT_MAX;
+  return (unsigned int)value;
+}
 
 
 GIFFChunk::~GIFFChunk(void) {}
@@ -117,7 +128,7 @@ GIFFChunk::set_name(GUTF8String name)
 
   strncpy(GIFFChunk::name, (const char *)name, 4);
   GIFFChunk::name[4]=0;
-  for(int i=strlen(GIFFChunk::name);i<4;i++)
+  for(int i=(int)strlen(GIFFChunk::name);i<4;i++)
     GIFFChunk::name[i]=' ';
 }
 
@@ -382,7 +393,7 @@ GIFFManager::add_chunk(GUTF8String parent_name, const GP<GIFFChunk> & chunk,
       EMPTY_LOOP;
     if (end>start)
     {
-      GUTF8String name(start,end-start);
+      GUTF8String name(start, ptrdiff_to_uint(end-start));
       GUTF8String short_name;
       int number=0;
       const int obracket=name.search('[');
@@ -494,7 +505,7 @@ GIFFManager::del_chunk(GUTF8String name)
     for(start=++end;*end&&(*end!='.');end++)
       EMPTY_LOOP;
     if (end>start && *end=='.')
-      cur_sec=cur_sec->get_chunk(GUTF8String(start, end-start));
+      cur_sec=cur_sec->get_chunk(GUTF8String(start, ptrdiff_to_uint(end-start)));
     if (!cur_sec)
       G_THROW( ERR_MSG("GIFFManager.cant_find") "\t"+GUTF8String(name));
   } while(*end);
@@ -543,7 +554,7 @@ GIFFManager::get_chunk(GUTF8String name, int * pos_num)
     for(start=++end;*end&&(*end!='.');end++)
       EMPTY_LOOP;
     if (end>start)
-      cur_sec=cur_sec->get_chunk(GUTF8String(start, end-start), pos_num);
+      cur_sec=cur_sec->get_chunk(GUTF8String(start, ptrdiff_to_uint(end-start)), pos_num);
     if (!cur_sec)
       break;
   } while(*end);
@@ -659,4 +670,3 @@ GIFFManager::save_file(GP<ByteStream> str)
 using namespace DJVU;
 # endif
 #endif
-

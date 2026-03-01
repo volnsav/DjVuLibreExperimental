@@ -436,7 +436,7 @@ MMRDecoder::VLSource::preload(void)
           if (readmax>=0 && readmax<size) 
             size = readmax;
           if (size>0)
-            bufmax = inp.read((void*)buffer, size);
+            bufmax = (int)inp.read((void*)buffer, size);
           readmax -= bufmax;
 	  if (bufmax <= 0)
             return;

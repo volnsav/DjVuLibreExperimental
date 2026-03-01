@@ -511,10 +511,10 @@ DjVuImage::decode(ByteStream & str, DjVuInterface *notifier)
   pport->stream_url=GURL::UTF8("internal://fake/fake.djvu");
   pport->stream_pool=DataPool::create();
   // Get all the data first
-  int length;
+  size_t length;
   char buffer[1024];
   while((length=str.read(buffer, 1024)))
-    pport->stream_pool->add_data(buffer, length);
+    pport->stream_pool->add_data(buffer, (int)length);
   pport->stream_pool->set_eof();
   GP<DjVuDocument> doc = DjVuDocument::create_wait(pport->stream_url, (DjVuImageNotifier*)pport);
   GP<DjVuImage> dimg=doc->get_page(-1, true, (DjVuImageNotifier*)pport);

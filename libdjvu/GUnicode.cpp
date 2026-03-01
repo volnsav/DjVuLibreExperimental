@@ -63,6 +63,7 @@
 #include "GString.h"
 
 #include <stddef.h>
+#include <limits.h>
 
 #if HAS_ICONV
 #include <iconv.h>
@@ -76,6 +77,12 @@ namespace DJVU {
 #endif
 
 static unsigned char nill=0;
+
+static unsigned int
+size_to_uint(size_t value)
+{
+  return (value > (size_t)UINT_MAX) ? UINT_MAX : (unsigned int)value;
+}
 
 static void const * 
 checkmarks(void const * const xbuf,
@@ -144,9 +151,10 @@ checkmarks(void const * const xbuf,
     if(bufsize)
     {
       const size_t s=(size_t)xbuf-(size_t)buf;
-      if(bufsize> s)
+      const unsigned int su=size_to_uint(s);
+      if(bufsize > su)
       {
-        bufsize-=s;
+        bufsize-=su;
       }else
       {
         bufsize=0;
@@ -503,7 +511,7 @@ GStringRep::Unicode::create(
         default:
           break;
       }
-      const unsigned int size=(size_t)optr-(size_t)utf8buf;
+      const unsigned int size=size_to_uint((size_t)optr-(size_t)utf8buf);
       if(size)
       {
         retval=(gretval=GStringRep::Unicode::create(size));
@@ -517,7 +525,7 @@ GStringRep::Unicode::create(
       retval->data[size]=0;
       gutf8buf.resize(0);
       const size_t s=(size_t)eptr-(size_t)iptr;
-      retval->set_remainder(iptr,s,t);
+      retval->set_remainder(iptr,size_to_uint(s),t);
     }
   }
   if(!retval)

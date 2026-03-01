@@ -62,6 +62,7 @@
 
 #include "UnicodeByteStream.h"
 #include "ByteStream.h"
+#include <limits.h>
 
 
 #ifdef HAVE_NAMESPACES
@@ -98,6 +99,12 @@ CountLines(const GUTF8String &str)
   return retval;
 }
 
+static int
+size_to_int(size_t value)
+{
+  return (value > (size_t)INT_MAX) ? INT_MAX : (int)value;
+}
+
 void
 UnicodeByteStream::set_encodetype(const GStringRep::EncodeType et)
 {
@@ -118,11 +125,11 @@ size_t
 UnicodeByteStream::read(void *buf, size_t size)
 {
   bufferpos=0;
-  const int retval=bs->read(buf,size);
+  const size_t retval=bs->read(buf,size);
   if(retval)
   {
     buffer=GUTF8String::create(
-      (unsigned char const *)buf,retval,buffer.get_remainder());
+      (unsigned char const *)buf,size_to_int(retval),buffer.get_remainder());
   }else
   {
     buffer=GUTF8String::create(0,0,buffer.get_remainder());
@@ -200,9 +207,9 @@ UnicodeByteStream::gets(
       {
         ++i;
       }
-      if(t&&(i>(int)t+bufferpos))
+      if(t && (i > size_to_int(t) + bufferpos))
       {
-        i=t+bufferpos;
+        i=size_to_int(t)+bufferpos;
       }
       if(i>bufferpos)
       {

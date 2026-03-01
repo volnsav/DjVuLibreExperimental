@@ -31,6 +31,7 @@
 #include <string.h>
 #include <time.h>
 #include <stdarg.h>
+#include <limits.h>
 
 #define MINIEXP_IMPLEMENTATION
 
@@ -64,6 +65,12 @@ assertfail(const char *fn, int ln)
 
 #define ASSERT(x) \
   do { if (!(x)) assertfail(__FILE__,__LINE__); } while(0)
+
+static int
+size_to_int(size_t value)
+{
+  return (value > (size_t)INT_MAX) ? INT_MAX : (int)value;
+}
 
 
 /* -------------------------------------------------- */
@@ -904,7 +911,7 @@ char *
 miniobj_t::pname() const
 {
   const char *cname = miniexp_to_name(classof());
-  int lres = strlen(cname)+24;
+  int lres = (int)strlen(cname)+24;
   char *res = new char[lres];
 #if HAVE_SNPRINTF
   snprintf(res,lres,"#%s:<%p>",cname,this);
@@ -1465,7 +1472,7 @@ printer_t::must_quote_symbol(const char *s, int flags)
 void
 printer_t::mlput_quoted_symbol(const char *s)
 {
-  int l = strlen(s);
+  int l = (int)strlen(s);
   char *r = new char[l+l+3];
   char *z = r;
   *z++ = '|';
@@ -1702,7 +1709,7 @@ pname_fputs(miniexp_io_t *io, const char *s)
   io->data[0] = (void*)(b);
   io->data[2] = (void*)(l + x);
   io->data[3] = (void*)(m);
-  return x;
+  return size_to_int(x);
 }
 
 miniexp_t 
@@ -1736,7 +1743,7 @@ miniexp_pname(miniexp_t p, int width)
 static void
 grow(char* &s, size_t &l, size_t &m)
 {
-  int nm = ((m<256)?256:m) + ((m>32000)?32000:m);
+  size_t nm = ((m<256)?256:m) + ((m>32000)?32000:m);
   char *ns = new char[nm+1];
   memcpy(ns, s, l);
   delete [] s;
@@ -2174,5 +2181,4 @@ minilisp_finish(void)
   delete symbols;
   symbols = 0;
 }
-
 

@@ -277,7 +277,8 @@ GLObject::print(ByteStream & str, int compact, int indent, int * cur_pos) const
     break;
   }
   const char * to_print = (const char*)buffer;
-  if (!compact && *cur_pos+strlen(to_print)>70)
+  const int to_print_len = (int)strlen(to_print);
+  if (!compact && *cur_pos + to_print_len > 70)
   {
     char ch='\n';
     str.write(&ch, 1);
@@ -285,13 +286,13 @@ GLObject::print(ByteStream & str, int compact, int indent, int * cur_pos) const
     for(int i=0;i<indent;i++) str.write(&ch, 1);
     *cur_pos=indent;
   }
-  str.write(to_print, strlen(to_print));
+  str.write(to_print, to_print_len);
   char ch=' ';
   str.write(&ch, 1);
-  *cur_pos+=strlen(to_print)+1;
+  *cur_pos += to_print_len + 1;
   if (type==LIST)
   {
-    int indent=*cur_pos-strlen(to_print);
+    int indent = *cur_pos - to_print_len;
     for(GPosition pos=list;pos;++pos)
       list[pos]->print(str, compact, indent, cur_pos);
     str.write(") ", 2);
@@ -756,9 +757,9 @@ DjVuANT::read_raw(ByteStream & str)
 {
    GUTF8String raw;
    char buffer[1024];
-   int length;
+   size_t length;
    while((length=str.read(buffer, 1024)))
-      raw+=GUTF8String(buffer, length);
+      raw+=GUTF8String(buffer, (unsigned int)length);
    return raw;
 }
 

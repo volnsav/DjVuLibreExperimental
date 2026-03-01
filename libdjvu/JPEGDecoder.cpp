@@ -284,7 +284,7 @@ skip_input_data (j_decompress_ptr cinfo, long num_bytes)
 
   if (num_bytes > (long) src->pub.bytes_in_buffer)
   {
-    src->byteStream->seek((num_bytes - src->pub.bytes_in_buffer), SEEK_CUR);
+    src->byteStream->seek((num_bytes - (long)src->pub.bytes_in_buffer), SEEK_CUR);
     (void) fill_input_buffer(cinfo);
   }else
   {
@@ -406,4 +406,3 @@ using namespace DJVU;
 #endif
 
 #endif
-

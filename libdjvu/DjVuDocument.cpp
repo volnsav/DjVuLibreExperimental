@@ -1129,9 +1129,9 @@ DjVuDocument::process_threqs(void)
           
           // Copy the data
           char buffer[1024];
-          int length;
+          size_t length;
           while((length=iff.read(buffer, 1024)))
-            req->data_pool->add_data(buffer, length);
+            req->data_pool->add_data(buffer, (int)length);
           req->data_pool->set_eof();
           
           // Also add this file to cache so that we won't have

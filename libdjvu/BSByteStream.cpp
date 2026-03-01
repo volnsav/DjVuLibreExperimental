@@ -399,7 +399,7 @@ BSByteStream::Decode::read(void *buffer, size_t sz)
       // Compute remaining
       int bytes = size;
       if (bytes > (int)sz)
-        bytes = sz;
+        bytes = (int)sz;
       // Transfer
       if (buffer && bytes)
         {

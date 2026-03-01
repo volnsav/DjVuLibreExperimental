@@ -634,7 +634,7 @@ RLE_encode(unsigned char * dst,
           const unsigned char * ptr1;
           for(ptr1=ptr+1;ptr1<src_end-1;ptr1++)
             if (ptr1[0]==ptr1[1] || ptr1-ptr>=128) break;
-          int pixels=ptr1-ptr;
+          int pixels=(int)(ptr1-ptr);
           *dst++=pixels-1;
           for(int cnt=0;cnt<pixels;cnt++)
             *dst++=*ptr++;
@@ -646,7 +646,7 @@ RLE_encode(unsigned char * dst,
           const unsigned char * ptr1;
           for(ptr1=ptr+1;ptr1<src_end-1;ptr1++)
             if (ptr1[0]!=ptr1[1] || ptr1-ptr+1>=128) break;
-          int pixels=ptr1-ptr+1;
+          int pixels=(int)(ptr1-ptr+1);
           *dst++=257-pixels;
           *dst++=*ptr;
           ptr=ptr1;
@@ -1411,7 +1411,7 @@ print_bg(ByteStream &str,
                     rle_out_end = RLE_encode(rle_out_end, rle_in, ptr);
                     unsigned char *encode_to 
                       = rle_out+(rle_out_end-rle_out)/4*4;
-                    int bytes_left = rle_out_end-encode_to;
+                    int bytes_left = (int)(rle_out_end-encode_to);
                     buf_ptr = ASCII85_encode(buf_ptr, rle_out, encode_to);
                     *buf_ptr++ = '\n';
                     memcpy(rle_out, encode_to, bytes_left);
@@ -1801,7 +1801,7 @@ print_image_lev2(ByteStream &str,
                   rle_out_end = RLE_encode(rle_out_end, rle_in, ptr);
                   unsigned char *encode_to = rle_out 
                     + (rle_out_end-rle_out)/4*4;
-                  int bytes_left = rle_out_end-encode_to;
+                  int bytes_left = (int)(rle_out_end-encode_to);
                   buf_ptr = ASCII85_encode(buf_ptr, rle_out, encode_to);
                   *buf_ptr++ = '\n';
                   memcpy(rle_out, encode_to, bytes_left);
@@ -2583,4 +2583,3 @@ print(ByteStream &str, GP<DjVuDocument> doc)
 using namespace DJVU;
 # endif
 #endif
-

@@ -104,7 +104,7 @@ DjVuInfo::decode(ByteStream &bs)
   orientation=0;
   // Read data
   unsigned char buffer[10];
-  int  size = bs.readall((void*)buffer, sizeof(buffer));
+  size_t size = bs.readall((void*)buffer, sizeof(buffer));
   if (size == 0)
     G_THROW( ByteStream::EndOfFile );
   if (size < 5)

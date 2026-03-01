@@ -291,12 +291,13 @@ DjVmDir::decode(const GP<ByteStream> &gstr)
       DEBUG_MSG("reading and decompressing names...\n");
       GTArray<char> strings;
       char buffer[1024];
-      int length;
+      size_t length;
       while((length=bs_str.read(buffer, 1024)))
       {
+         const int ilength = (int)length;
          int strings_size=strings.size();
-         strings.resize(strings_size+length-1);
-         memcpy((char*) strings+strings_size, buffer, length);
+         strings.resize(strings_size+ilength-1);
+         memcpy((char*) strings+strings_size, buffer, ilength);
       }
       DEBUG_MSG("size of decompressed names block=" << strings.size() << "\n");
       int strings_size=strings.size();
