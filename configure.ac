@@ -266,6 +266,7 @@ libdjvu/Makefile
 tools/Makefile
 xmltools/Makefile
 share/Makefile
+tests/Makefile
 desktopfiles/Makefile
 ])
 

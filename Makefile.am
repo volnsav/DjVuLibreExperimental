@@ -1,6 +1,6 @@
 ACLOCAL_AMFLAGS = -I config
 
-SUBDIRS = libdjvu tools share
+SUBDIRS = libdjvu tools share tests
 
 if WANT_XMLTOOLS
 SUBDIRS += xmltools
