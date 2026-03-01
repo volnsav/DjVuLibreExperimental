@@ -77,8 +77,9 @@ int main()
   check_true(bs->seek(4, SEEK_SET) == 0, "seek to integer offset should succeed");
   check_true(bs->read32() == 0x01020304U, "read32() should match write32() value");
 
+  check_true(bs->seek(0, SEEK_SET) == 0, "seek(0, SEEK_SET) before getAsUTF8() should succeed");
   GUTF8String as_text = bs->getAsUTF8();
-  check_true(as_text.length() >= 4, "getAsUTF8() should expose stream content");
+  check_true(as_text.contains("djvu") >= 0, "getAsUTF8() should expose stream content");
 
   if (g_failures != 0)
     {
