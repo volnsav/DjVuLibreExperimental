@@ -27,6 +27,26 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Detect MSVC toolset
+        id: toolset
+        shell: pwsh
+        run: |
+          $base = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Platforms\x64\PlatformToolsets"
+          $toolset = ""
+          if (Test-Path (Join-Path $base "v145\Toolset.props")) {
+            $toolset = "v145"
+          } elseif (Test-Path (Join-Path $base "v143\Toolset.props")) {
+            $toolset = "v143"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($toolset)) {
+            Write-Error "Supported toolset not found (expected v145 or v143)."
+            exit 1
+          }
+
+          "value=$toolset" >> $env:GITHUB_OUTPUT
+          Write-Host "Using DjvuPlatformToolset=$toolset"
+
       - name: Prepare third-party sources (jpeg/zlib/tiff)
         shell: pwsh
         run: |
@@ -70,7 +90,9 @@ jobs:
             /m `
             /t:libdjvulibre `
             /p:Configuration=Release `
-            /p:Platform=x64
+            /p:Platform=x64 `
+            /p:PlatformToolset=${{ steps.toolset.outputs.value }} `
+            /p:DjvuPlatformToolset=${{ steps.toolset.outputs.value }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -118,6 +140,27 @@ jobs:
         if: ${{ steps.mode.outputs.run == 'true' }}
         uses: microsoft/setup-msbuild@v2
 
+      - name: Detect MSVC toolset
+        if: ${{ steps.mode.outputs.run == 'true' }}
+        id: toolset
+        shell: pwsh
+        run: |
+          $base = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Platforms\x64\PlatformToolsets"
+          $toolset = ""
+          if (Test-Path (Join-Path $base "v145\Toolset.props")) {
+            $toolset = "v145"
+          } elseif (Test-Path (Join-Path $base "v143\Toolset.props")) {
+            $toolset = "v143"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($toolset)) {
+            Write-Error "Supported toolset not found (expected v145 or v143)."
+            exit 1
+          }
+
+          "value=$toolset" >> $env:GITHUB_OUTPUT
+          Write-Host "Using DjvuPlatformToolset=$toolset"
+
       - name: Prepare third-party sources (jpeg/zlib/tiff)
         if: ${{ steps.mode.outputs.run == 'true' }}
         shell: pwsh
@@ -163,7 +206,9 @@ jobs:
             /m `
             /t:libdjvulibre `
             /p:Configuration=${{ matrix.config }} `
-            /p:Platform=x64
+            /p:Platform=x64 `
+            /p:PlatformToolset=${{ steps.toolset.outputs.value }} `
+            /p:DjvuPlatformToolset=${{ steps.toolset.outputs.value }}
 
       - name: Upload artifact
         if: ${{ steps.mode.outputs.run == 'true' }}
