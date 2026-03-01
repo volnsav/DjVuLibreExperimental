@@ -2,6 +2,7 @@ param(
   [ValidateSet("5", "6")]
   [string]$QtMajor = "6",
   [switch]$NoInstallDeps,
+  [switch]$EnableGtest,
   [int]$Jobs = 0
 )
 
@@ -14,6 +15,9 @@ if (-not $repoRootLinux) {
 $args = @("--qt-major", $QtMajor)
 if ($NoInstallDeps) {
   $args += "--no-install-deps"
+}
+if ($EnableGtest) {
+  $args += "--enable-gtest"
 }
 if ($Jobs -gt 0) {
   $args += @("--jobs", "$Jobs")

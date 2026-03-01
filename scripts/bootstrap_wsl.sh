@@ -12,6 +12,7 @@ INSTALL_DEPS="1"
 JOBS=""
 PREFIX=""
 RUN_INSTALL="0"
+ENABLE_GTEST="0"
 
 usage() {
   cat <<'EOF'
@@ -23,6 +24,7 @@ Options:
   --jobs N               Parallel jobs for make (default: nproc)
   --prefix PATH          Installation prefix (default: ./_wsl-prefix)
   --run-install          Run "make install" after build
+  --enable-gtest         Enable GoogleTest-based unit tests
   -h, --help             Show this help
 EOF
 }
@@ -47,6 +49,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --run-install)
       RUN_INSTALL="1"
+      shift
+      ;;
+    --enable-gtest)
+      ENABLE_GTEST="1"
       shift
       ;;
     -h|--help)
@@ -89,6 +95,10 @@ if [[ "$INSTALL_DEPS" == "1" ]]; then
     libjpeg-dev \
     zlib1g-dev
 
+  if [[ "$ENABLE_GTEST" == "1" ]]; then
+    sudo apt-get install -y libgtest-dev
+  fi
+
   if [[ "$QT_MAJOR" == "6" ]]; then
     sudo apt-get install -y \
       qt6-base-dev \
@@ -126,7 +136,15 @@ echo "==> Qt profile: $QT_MAJOR (QMAKE=$QMAKE)"
 echo "==> Prefix: $PREFIX"
 echo "==> Jobs: $JOBS"
 
-./autogen.sh --prefix="$PREFIX" --disable-desktopfiles --disable-nsdejavu
+CONFIGURE_ARGS=(
+  --prefix="$PREFIX"
+  --disable-desktopfiles
+)
+if [[ "$ENABLE_GTEST" == "1" ]]; then
+  CONFIGURE_ARGS+=(--enable-gtest)
+fi
+
+./autogen.sh "${CONFIGURE_ARGS[@]}"
 make -j"$JOBS"
 make -j"$JOBS" check
 

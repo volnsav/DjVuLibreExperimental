@@ -250,6 +250,47 @@ AC_ARG_ENABLE(desktopfiles,
 AM_CONDITIONAL([WANT_DESKTOPFILES], [test "x${ac_desktopfiles}" = "xyes"])
 
 # ----------------------------------------
+# Unit tests: optional GoogleTest runner
+# ----------------------------------------
+
+ac_gtest="no"
+have_gtest="no"
+GTEST_LIBS=""
+GTEST_CPPFLAGS=""
+
+AC_ARG_ENABLE([gtest],
+   [AS_HELP_STRING([--enable-gtest],
+           [Build GoogleTest-based unit tests (optional). @<:@default=disabled@:>@])],
+   [ac_gtest=${enableval}])
+
+if test "x${ac_gtest}" = "xyes" ; then
+  AC_CHECK_HEADER([gtest/gtest.h], [have_gtest_header=yes], [have_gtest_header=no])
+  if test "x${have_gtest_header}" = "xyes" ; then
+    AC_LANG_PUSH([C++])
+    ac_save_LIBS="$LIBS"
+    LIBS="$LIBS -lgtest $PTHREAD_LIBS"
+    AC_MSG_CHECKING([for GoogleTest library])
+    AC_LINK_IFELSE(
+      [AC_LANG_PROGRAM([[#include <gtest/gtest.h>]],
+                       [[int argc = 0; char **argv = 0; ::testing::InitGoogleTest(&argc, argv); return RUN_ALL_TESTS();]])],
+      [have_gtest=yes],
+      [have_gtest=no]
+    )
+    AC_MSG_RESULT([$have_gtest])
+    LIBS="$ac_save_LIBS"
+    AC_LANG_POP([C++])
+  fi
+  if test "x${have_gtest}" != "xyes" ; then
+    AC_MSG_ERROR([GoogleTest requested but not found. Install gtest development files or disable --enable-gtest.])
+  fi
+  GTEST_LIBS="-lgtest $PTHREAD_LIBS"
+fi
+
+AM_CONDITIONAL([WANT_GTEST], [test "x${have_gtest}" = "xyes"])
+AC_SUBST([GTEST_LIBS])
+AC_SUBST([GTEST_CPPFLAGS])
+
+# ----------------------------------------
 # End
 # ----------------------------------------
 
@@ -288,6 +329,7 @@ echo "  JPEG support.......: ${have_jpeg}"
 echo "  TIFF support.......: ${have_tiff}"
 echo "  XML tools..........: ${want_xmltools}"
 echo "  Desktop files......: ${ac_desktopfiles}"
+echo "  GoogleTest tests...: ${have_gtest}"
 echo "  Icon generation....: ${conversion_tool}"
 echo
 echo "Compilation..........: make (or gmake)"
