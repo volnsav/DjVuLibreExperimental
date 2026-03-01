@@ -31,11 +31,21 @@ jobs:
         id: toolset
         shell: pwsh
         run: |
-          $base = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Platforms\x64\PlatformToolsets"
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $base = $null
+          if (Test-Path $vswhere) {
+            $installPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($installPath)) {
+              $base = Join-Path $installPath "MSBuild\Microsoft\VC\v170\Platforms\x64\PlatformToolsets"
+            }
+          }
           $toolset = ""
-          if (Test-Path (Join-Path $base "v145\Toolset.props")) {
+          if ($base -and (Test-Path (Join-Path $base "v145\Toolset.props"))) {
             $toolset = "v145"
-          } elseif (Test-Path (Join-Path $base "v143\Toolset.props")) {
+          } elseif ($base -and (Test-Path (Join-Path $base "v143\Toolset.props"))) {
+            $toolset = "v143"
+          } else {
+            # windows-latest always has v143; use as safe fallback when discovery path differs.
             $toolset = "v143"
           }
 
@@ -145,11 +155,21 @@ jobs:
         id: toolset
         shell: pwsh
         run: |
-          $base = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Platforms\x64\PlatformToolsets"
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $base = $null
+          if (Test-Path $vswhere) {
+            $installPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($installPath)) {
+              $base = Join-Path $installPath "MSBuild\Microsoft\VC\v170\Platforms\x64\PlatformToolsets"
+            }
+          }
           $toolset = ""
-          if (Test-Path (Join-Path $base "v145\Toolset.props")) {
+          if ($base -and (Test-Path (Join-Path $base "v145\Toolset.props"))) {
             $toolset = "v145"
-          } elseif (Test-Path (Join-Path $base "v143\Toolset.props")) {
+          } elseif ($base -and (Test-Path (Join-Path $base "v143\Toolset.props"))) {
+            $toolset = "v143"
+          } else {
+            # windows-latest always has v143; use as safe fallback when discovery path differs.
             $toolset = "v143"
           }
 
