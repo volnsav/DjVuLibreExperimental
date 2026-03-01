@@ -78,6 +78,7 @@
 #include <ctype.h>
 #include <math.h>
 #include <string.h>
+#include <limits.h>
 
 #ifdef _WIN32
 # include <tchar.h>
@@ -228,6 +229,40 @@ is_argument_sep(const char * start)
    return (*start=='&')||(*start == ';');
 }
 
+static int
+size_to_int(size_t value)
+{
+  return (value > (size_t)INT_MAX) ? INT_MAX : (int)value;
+}
+
+static int
+ptrdiff_to_int(ptrdiff_t value)
+{
+  if (value <= 0)
+    return 0;
+  if (value > (ptrdiff_t)INT_MAX)
+    return INT_MAX;
+  return (int)value;
+}
+
+static unsigned int
+ptrdiff_to_uint(ptrdiff_t value)
+{
+  if (value <= 0)
+    return 0u;
+  if (value > (ptrdiff_t)UINT_MAX)
+    return UINT_MAX;
+  return (unsigned int)value;
+}
+
+#ifdef _WIN32
+static DWORD
+size_to_dword(size_t value)
+{
+  return (value > 0xFFFFFFFFu) ? 0xFFFFFFFFu : (DWORD)value;
+}
+#endif
+
 void
 GURL::convert_slashes(void)
 {
@@ -247,8 +282,9 @@ collapse(char * ptr, const int chars)
       // move the rest toward the beginning. Will take into account
       // string length
 {
-   const int length=strlen(ptr);
-   const char *srcptr=ptr+((chars>length)?length:chars);
+   const size_t length=strlen(ptr);
+   const size_t nchars=(chars <= 0) ? 0 : (size_t)chars;
+   const char *srcptr=ptr+((nchars>length)?length:nchars);
    while((*(ptr++) = *(srcptr++)))
      EMPTY_LOOP;
 }
@@ -323,7 +359,7 @@ GURL::beautify_path(GUTF8String xurl)
     {
       if (*ptr1==slash)
       {
-        collapse(ptr1, ptr-ptr1+3);
+        collapse(ptr1, ptrdiff_to_int((ptr-ptr1)+3));
         break;
       }
     }
@@ -392,7 +428,7 @@ GURL::init(const bool nothrow)
            for(ptr=url_ptr;*ptr&&!is_argument(ptr);ptr++)
            		EMPTY_LOOP;
            arg=ptr;
-           url=url.substr(0,(size_t)(ptr-url_ptr));
+           url=url.substr(0, ptrdiff_to_int(ptr-url_ptr));
          }
 
             // Do double conversion
@@ -487,7 +523,7 @@ GURL::protocol(const GUTF8String& url)
       c && isascii(c) && (isalnum(c) || c == '+' || c == '-' || c == '.');
       c=*(++ptr)) EMPTY_LOOP;
   if (ptr[0]==colon && ptr[1]=='/' && ptr[2]=='/')
-    return GUTF8String(url_ptr, ptr-url_ptr);
+    return GUTF8String(url_ptr, ptrdiff_to_uint(ptr-url_ptr));
   return GUTF8String();
 }
 
@@ -617,7 +653,7 @@ GURL::store_cgi_args(void)
    for(ptr=url_ptr;*ptr&&(*ptr!='?');ptr++)
    		EMPTY_LOOP;
    
-   GUTF8String new_url(url_ptr, ptr-url_ptr);
+   GUTF8String new_url(url_ptr, ptrdiff_to_uint(ptr-url_ptr));
    
    for(int i=0;i<cgi_name_arr.size();i++)
    {
@@ -833,7 +869,7 @@ GURL::clear_cgi_arguments(void)
    for(const char *ptr = ptrurl; *ptr; ptr++)
      if (*ptr=='?')
        {
-         url.setat(ptr-ptrurl, 0);
+         url.setat(ptrdiff_to_int(ptr-ptrurl), 0);
          break;
        }
 }
@@ -991,7 +1027,7 @@ GURL::name(void) const
        if (*ptr==slash)
           xslash=ptr;
 	 }
-     retval=GUTF8String(xslash+1, ptr-xslash-1);
+     retval=GUTF8String(xslash+1, ptrdiff_to_uint((ptr-xslash)-1));
    }
    return retval;
 }
@@ -1041,7 +1077,7 @@ GURL::decode_reserved(const GUTF8String &gurl)
       if ( ((c1=hexval(ptr[1]))>=0)
         && ((c2=hexval(ptr[2]))>=0) )
       {
-        r[0]=(c1<<4)|c2;
+        r[0]=(char)((c1<<4)|c2);
         ptr+=2;
       } else
       {
@@ -1214,14 +1250,14 @@ GURL::GURL(const GUTF8String &xurl,const GURL &codebase)
       const int protocol_length=GURL::protocol(all).length();
       const char *start = buffer + pathname_start(all,protocol_length);
       if (start > buffer)
-        prefix = GUTF8String(buffer, start-buffer);
+        prefix = GUTF8String(buffer, ptrdiff_to_uint(start-buffer));
       const char *ptr = start;
       while (*ptr && !is_argument(ptr))
         ptr++;
       if (*ptr)
         suffix = GUTF8String(ptr);
       if (ptr > start)
-        path = GUTF8String(start, ptr-start);
+        path = GUTF8String(start, ptrdiff_to_uint(ptr-start));
       // append xurl to path
       const char *c = xurl;
       if(c[0] == slash)
@@ -1409,7 +1445,7 @@ GURL::is_file(void) const
     wchar_t *wfilename;
     const size_t wfilename_size=filename.length()+1;
     GPBuffer<wchar_t> gwfilename(wfilename,wfilename_size);
-    filename.ncopy(wfilename,wfilename_size);
+    filename.ncopy(wfilename, size_to_int(wfilename_size));
     DWORD dwAttrib;
     dwAttrib = GetFileAttributesW(wfilename);
     if((dwAttrib|1) == 0xFFFFFFFF)
@@ -1443,7 +1479,7 @@ GURL::is_local_path(void) const
     wchar_t *wfilename;
     const size_t wfilename_size=filename.length()+1;
     GPBuffer<wchar_t> gwfilename(wfilename,wfilename_size);
-    filename.ncopy(wfilename,wfilename_size);
+    filename.ncopy(wfilename, size_to_int(wfilename_size));
     DWORD dwAttrib;
     dwAttrib = GetFileAttributesW(wfilename);
     if((dwAttrib|1) == 0xFFFFFFFF)
@@ -1481,7 +1517,7 @@ GURL::is_dir(void) const
     wchar_t *wfilename;
     const size_t wfilename_size=filename.length()+1;
     GPBuffer<wchar_t> gwfilename(wfilename,wfilename_size);
-    filename.ncopy(wfilename,wfilename_size);
+    filename.ncopy(wfilename, size_to_int(wfilename_size));
     DWORD dwAttrib;
     dwAttrib = GetFileAttributesW(wfilename);
     if((dwAttrib|1) == 0xFFFFFFFF)
@@ -1660,7 +1696,7 @@ GURL::expand_name(const GUTF8String &xfname, const char *from)
   const char *fname=xfname;
   GUTF8String retval;
   const size_t maxlen=xfname.length()*9+MAXPATHLEN+10;
-  char * const string_buffer = retval.getbuf(maxlen);
+  char * const string_buffer = retval.getbuf(size_to_int(maxlen));
   // UNIX implementation
 #if defined(UNIX)
   // Perform tilde expansion
@@ -1793,7 +1829,7 @@ GURL::expand_name(const GUTF8String &xfname, const char *from)
           drv[1]=colon;
           drv[2]= dot ;
           drv[3]=0;
-          GetFullPathName(drv, maxlen, string_buffer, &s);
+          GetFullPathName(drv, size_to_dword(maxlen), string_buffer, &s);
           strcpy(string_buffer,(const char *)GUTF8String(string_buffer).getNative2UTF8());
           s = string_buffer;
         }
@@ -1801,7 +1837,7 @@ GURL::expand_name(const GUTF8String &xfname, const char *from)
       }
       else if (fname[3]!= slash && fname[3]!= backslash)
       {       // Case "x:/abcd"
-        s[0]=toupper((unsigned char)fname[0]);
+        s[0]=(char)toupper((unsigned char)fname[0]);
         s[1]=colon;
         s[2]=backslash;
         s[3]=0;

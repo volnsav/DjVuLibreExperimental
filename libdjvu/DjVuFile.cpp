@@ -106,7 +106,7 @@ public:
 
   virtual size_t read(void *buffer, size_t size)
   {
-    int rc=0;
+    size_t rc=0;
 	   // G_TRY {} CATCH; block here is merely to avoid egcs internal error
     G_TRY {
       int cur_pos=str->tell();
@@ -552,9 +552,9 @@ DjVuFile::process_incl_chunk(ByteStream & str, int file_num)
   
   GUTF8String incl_str;
   char buffer[1024];
-  int length;
+  size_t length;
   while((length=str.read(buffer, 1024)))
-    incl_str+=GUTF8String(buffer, length);
+    incl_str+=GUTF8String(buffer, (unsigned int)length);
   
   // Eat '\n' in the beginning and at the end
   while(incl_str.length() && incl_str[0]=='\n')
@@ -2213,10 +2213,10 @@ copy_chunks(const GP<ByteStream> &from, IFFByteStream &ostr)
   while ((chksize=iff.get_chunk(chkid)))
   {
     ostr.put_chunk(chkid);
-    int ochksize=ostr.copy(*iff.get_bytestream());
+    const size_t ochksize=ostr.copy(*iff.get_bytestream());
     ostr.close_chunk();
     iff.seek_close_chunk();
-    if(ochksize != chksize)
+    if(ochksize != (size_t)chksize)
     {
       G_THROW( ByteStream::EndOfFile );
     }
@@ -2589,9 +2589,9 @@ DjVuFile::unlink_file(const GP<DataPool> & data, const GUTF8String &name)
     {
       GUTF8String incl_str;
       char buffer[1024];
-      int length;
+      size_t length;
       while((length=iff_in.read(buffer, 1024)))
-        incl_str+=GUTF8String(buffer, length);
+        incl_str+=GUTF8String(buffer, (unsigned int)length);
       
       // Eat '\n' in the beginning and at the end
       while(incl_str.length() && incl_str[0]=='\n')
@@ -2612,7 +2612,7 @@ DjVuFile::unlink_file(const GP<DataPool> & data, const GUTF8String &name)
     {
       iff_out.put_chunk(chkid);
       char buffer[1024];
-      int length;
+      size_t length;
       for(const GP<ByteStream> gbs(iff_out.get_bytestream());
         (length=iff_in.read(buffer, 1024));)
       {
@@ -2732,9 +2732,9 @@ DjVuFile::unlink_file(const GUTF8String &id)
       {
         GUTF8String incl_str;
         char buffer[1024];
-        int length;
+        size_t length;
         while((length=iff_in.read(buffer, 1024)))
-          incl_str+=GUTF8String(buffer, length);
+          incl_str+=GUTF8String(buffer, (unsigned int)length);
         
 	       // Eat '\n' in the beginning and at the end
         while(incl_str.length() && incl_str[0]=='\n')

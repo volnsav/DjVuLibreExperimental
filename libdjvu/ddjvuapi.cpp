@@ -66,6 +66,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <locale.h>
+#include <limits.h>
 
 #ifdef HAVE_NAMESPACES
 namespace DJVU {
@@ -85,6 +86,22 @@ using namespace DJVU;
 #else
 # define DJVUNS /**/
 #endif
+
+static int
+size_to_int(size_t value)
+{
+  return (value > (size_t)INT_MAX) ? INT_MAX : (int)value;
+}
+
+static unsigned int
+ptrdiff_to_uint(ptrdiff_t value)
+{
+  if (value <= 0)
+    return 0u;
+  if (value > (ptrdiff_t)UINT_MAX)
+    return UINT_MAX;
+  return (unsigned int)value;
+}
 
 #include "GException.h"
 #include "GSmartPointer.h"
@@ -250,7 +267,7 @@ unref(GPEnabled *p)
 static char *
 xstr(const char *s)
 {
-  int l = strlen(s);
+  size_t l = strlen(s);
   char *p = (char*)malloc(l + 1);
   if (p) 
     {
@@ -1448,12 +1465,12 @@ ddjvu_document_get_pageinfo_imp(ddjvu_document_t *document, int pageno,
                       if (gbs->read8() == 0)
                         {
                           gbs->read8();
-                          unsigned char vhi = gbs->read8();
-                          unsigned char vlo = gbs->read8();
-                          unsigned char xhi = gbs->read8();
-                          unsigned char xlo = gbs->read8();
-                          unsigned char yhi = gbs->read8();
-                          unsigned char ylo = gbs->read8();
+                          unsigned char vhi = (unsigned char)gbs->read8();
+                          unsigned char vlo = (unsigned char)gbs->read8();
+                          unsigned char xhi = (unsigned char)gbs->read8();
+                          unsigned char xlo = (unsigned char)gbs->read8();
+                          unsigned char yhi = (unsigned char)gbs->read8();
+                          unsigned char ylo = (unsigned char)gbs->read8();
                           myinfo.width = (xhi<<8)+xlo;
                           myinfo.height = (yhi<<8)+ylo;
                           myinfo.dpi = 100;
@@ -1487,7 +1504,7 @@ get_file_dump(DjVuFile *file)
   if ((size = str->size()) > 0 && (buffer = (char*)malloc(size+1)))
     {
       str->seek(0);
-      int len = str->readall(buffer, size);
+      size_t len = str->readall(buffer, size);
       buffer[len] = 0;
       return buffer;
     }
@@ -2158,7 +2175,7 @@ void
 ddjvu_format_set_ditherbits(ddjvu_format_t *format, int bits)
 {
   if (bits>0 && bits<=64)
-    format->ditherbits = bits;
+    format->ditherbits = (char)bits;
 }
 
 void
@@ -2208,7 +2225,7 @@ fmt_convert_row(const GPixel *p, int w,
       {
         uint16_t *b = (uint16_t*)buf;
         while (--w >= 0) {
-          b[0]=(r[0][p->r]|r[1][p->g]|r[2][p->b])^xorval; 
+          b[0]=(uint16_t)((r[0][p->r]|r[1][p->g]|r[2][p->b])^xorval); 
           b+=1; p+=1; 
         }
         break;
@@ -2234,7 +2251,7 @@ fmt_convert_row(const GPixel *p, int w,
       {
         const uint32_t *u = fmt->palette;
         while (--w >= 0) {
-          buf[0] = u[r[0][p->r]+r[1][p->g]+r[2][p->b]]; 
+          buf[0] = (char)u[r[0][p->r]+r[1][p->g]+r[2][p->b]]; 
           buf+=1; p+=1; 
         }
         break;
@@ -2319,7 +2336,7 @@ fmt_convert_row(unsigned char *p, unsigned char g[256][4], int w,
         uint16_t *b = (uint16_t*)buf;
         while (--w >= 0) {
           unsigned char x = *p;
-          b[0]=(r[0][g[x][2]]|r[1][g[x][1]]|r[2][g[x][0]])^xorval; 
+          b[0]=(uint16_t)((r[0][g[x][2]]|r[1][g[x][1]]|r[2][g[x][0]])^xorval); 
           b+=1; p+=1; 
         }
         break;
@@ -2347,7 +2364,7 @@ fmt_convert_row(unsigned char *p, unsigned char g[256][4], int w,
         const uint32_t *u = fmt->palette;
         while (--w >= 0) {
           unsigned char x = *p;
-          buf[0] = u[r[0][g[x][0]]+r[1][g[x][1]]+r[2][g[x][2]]]; 
+          buf[0] = (char)u[r[0][g[x][0]]+r[1][g[x][1]]+r[2][g[x][2]]]; 
           buf+=1; p+=1; 
         }
         break;
@@ -2395,9 +2412,9 @@ fmt_convert(GBitmap *bm, const ddjvu_format_t *fmt, char *buffer, int rowsize)
   const GPixel &wh = fmt->white;
   for (i=0; i<m; i++)
     {
-      g[i][0] = wh.b - ( i * wh.b + (m - 1)/2 ) / (m - 1);
-      g[i][1] = wh.g - ( i * wh.g + (m - 1)/2 ) / (m - 1);
-      g[i][2] = wh.r - ( i * wh.r + (m - 1)/2 ) / (m - 1);
+      g[i][0] = (unsigned char)(wh.b - ( i * wh.b + (m - 1)/2 ) / (m - 1));
+      g[i][1] = (unsigned char)(wh.g - ( i * wh.g + (m - 1)/2 ) / (m - 1));
+      g[i][2] = (unsigned char)(wh.r - ( i * wh.r + (m - 1)/2 ) / (m - 1));
       g[i][3] = (5*g[i][2] + 9*g[i][1] + 2*g[i][0])>>4; 
     }
   for (i=m; i<256; i++)
@@ -2892,7 +2909,7 @@ ddjvu_document_print(ddjvu_document_t *document, FILE *output,
           // separate arguments
           const char *s2 = s1;
           while (*s2 && *s2 != '=') s2++;
-          GUTF8String s( s1, s2-s1 );
+          GUTF8String s( s1, ptrdiff_to_uint(s2-s1) );
           GUTF8String arg( s2[0] && s2[1] ? s2+1 : "" );
           // rumble!
           if (s == "page" || s == "pages")
@@ -3219,9 +3236,9 @@ ddjvu_savejob_s::mark_included_files(DjVuFile *file)
           GP<ByteStream> incl = iff->get_bytestream();
           GUTF8String fileid;
           char buffer[1024];
-          int length;
+          size_t length;
           while((length=incl->read(buffer, 1024)))
-            fileid += GUTF8String(buffer, length);
+            fileid += GUTF8String(buffer, (unsigned int)length);
           for (int i=0; i<comp_ids.size(); i++)
             if (fileid == comp_ids[i] && !comp_flags[i])
               comp_flags[i] = 1;
@@ -3748,7 +3765,7 @@ anno_fgetc(miniexp_io_t *io)
 #else
               sprintf(anno_dat.buf,"%03o", c);
 #endif
-              anno_dat.blen = strlen(anno_dat.buf);
+              anno_dat.blen = size_to_int(strlen(anno_dat.buf));
               c = '\\';
             }
           break;
@@ -3761,7 +3778,7 @@ anno_fgetc(miniexp_io_t *io)
 #else
               sprintf(anno_dat.buf, "\\%03o", c);
 #endif
-              anno_dat.blen = strlen(anno_dat.buf);
+              anno_dat.blen = size_to_int(strlen(anno_dat.buf));
               c = '\\';
             }
           break;
@@ -3783,7 +3800,7 @@ anno_ungetc(miniexp_io_t *io, int c)
   for (int i=anno_dat.blen; i>0; i--)
     anno_dat.buf[i] = anno_dat.buf[i-1];
   anno_dat.blen += 1;
-  anno_dat.buf[0] = c;
+  anno_dat.buf[0] = (char)c;
   return c;
 }
 
@@ -3794,9 +3811,9 @@ anno_sub(ByteStream *bs, miniexp_t &result)
   // Read bs
   GUTF8String raw;
   char buffer[1024];
-  int length;
+  size_t length;
   while ((length=bs->read(buffer, sizeof(buffer))))
-    raw += GUTF8String(buffer, length);
+    raw += GUTF8String(buffer, (unsigned int)length);
   // Prepare 
   miniexp_t a;
   struct anno_dat_s anno_dat;
@@ -4104,5 +4121,3 @@ ddjvu_get_DjVuDocument(ddjvu_document_t *document)
 {
   return document->doc;
 }
-
-

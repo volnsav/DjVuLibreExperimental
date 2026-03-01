@@ -77,6 +77,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 #if HAS_WCHAR
 # include <locale.h>
 # if !defined(AUTOCONF) || HAVE_WCHAR_H
@@ -137,6 +138,24 @@ mbrlen(const char *s, size_t n, mbstate_t *)
   return mblen(s,n);
 }
 #endif // !HAS_MBSTATE || HAS_WCHAR
+
+static inline bool
+mbr_failed(const size_t len)
+{
+  return (len == (size_t)-1) || (len == (size_t)-2);
+}
+
+static inline unsigned int
+size_to_uint(const size_t n)
+{
+  return (n > (size_t)UINT_MAX) ? UINT_MAX : (unsigned int)n;
+}
+
+static inline int
+size_to_int(const size_t n)
+{
+  return (n > (size_t)INT_MAX) ? INT_MAX : (int)n;
+}
 
 
 GP<GStringRep>
@@ -551,8 +570,8 @@ GStringRep::UCS4toNative(const uint32_t w0,unsigned char *ptr, mbstate_t *ps)
     {
       // wchar_t can be either UCS4 or UCS2
       const wchar_t w=(sizeof(wchar_t) == sizeof(w1))?(wchar_t)w1:(wchar_t)w0;
-      int i=wcrtomb((char *)ptr,w,ps);
-      if(i<0)
+      size_t i=wcrtomb((char *)ptr,w,ps);
+      if(i==(size_t)-1)
         break;
       ptr[i]=0;
       ptr += i;
@@ -583,46 +602,74 @@ GStringRep::Native::toUTF8(const bool) const
     unsigned char *ptr=buf;
     //(void)mbrlen(source, n, &ps);
     memset(&ps,0,sizeof(mbstate_t));
-    int i=0;
+    bool conversion_failed=false;
     if(sizeof(wchar_t) == sizeof(uint32_t))
       {
         wchar_t w = 0;
-        for(;(n>0)&&((i=mbrtowc(&w,source,n,&ps))>=0); n-=i,source+=i)
+        while(n>0)
           {
+            size_t i=mbrtowc(&w,source,n,&ps);
+            if(mbr_failed(i))
+              {
+                conversion_failed=true;
+                break;
+              }
+            // mbrtowc returns 0 for '\0' but still consumes one byte.
+            if(i==0)
+              i=1;
+            n-=i;
+            source+=i;
             ptr=UCS4toUTF8((uint32_t)w,ptr);
           }
       }
     else
       { 
         wchar_t w = 0;
-        for(;(n>0)&&((i=mbrtowc(&w,source,n,&ps))>=0);n-=i,source+=i)
+        while(n>0)
           {
+            size_t i=mbrtowc(&w,source,n,&ps);
+            if(mbr_failed(i))
+              {
+                conversion_failed=true;
+                break;
+              }
+            if(i==0)
+              i=1;
+            n-=i;
+            source+=i;
             uint16_t s[2];
             s[0]=w;
             uint32_t w0;
             if(UTF16toUCS4(w0,s,s+1)<=0)
               {
-                source+=i;
-                n-=i;
-                if((n>0)&&((i=mbrtowc(&w,source,n,&ps))>=0))
+                if(n>0)
                   {
+                    const size_t i2=mbrtowc(&w,source,n,&ps);
+                    if(mbr_failed(i2))
+                      {
+                        conversion_failed=true;
+                        break;
+                      }
+                    const size_t consumed=(i2==0)?1:i2;
+                    source+=consumed;
+                    n-=consumed;
                     s[1]=w;
                     if(UTF16toUCS4(w0,s,s+2)<=0)
                       {
-                        i=(-1);
+                        conversion_failed=true;
                         break;
                       }
                   }
                 else
                   {
-                    i=(-1);
+                    conversion_failed=true;
                     break;
                   }
               }
             ptr=UCS4toUTF8(w0,ptr);
           }
       }
-    if(i<0)
+    if(conversion_failed)
       {
         gbuf.resize(0);
       }
@@ -815,33 +862,35 @@ uint32_t
 GStringRep::Native::getValidUCS4(const char *&source) const
 {
   uint32_t retval=0;
-  int n=(int)((size_t)size+(size_t)data-(size_t)source);
+  size_t n=(source && source<=data+size) ? (size_t)((data+size)-source) : 0;
   if(source && (n > 0))
   {
     mbstate_t ps;
     //(void)mbrlen(source, n, &ps);
     memset(&ps,0,sizeof(mbstate_t));
     wchar_t wt;
-    const int len=mbrtowc(&wt,source,n,&ps); 
-    if(len>=0)
+    const size_t len=mbrtowc(&wt,source,n,&ps); 
+    if(!mbr_failed(len))
     {
+      const size_t consumed=(len==0)?1:len;
       if(sizeof(wchar_t) == sizeof(uint16_t))
       {
-        source+=len;
+        source+=consumed;
         uint16_t s[2];
         s[0]=(uint16_t)wt;
         if(UTF16toUCS4(retval,s,s+1)<=0)
         {
-          if((n-=len)>0)
+          if((n-=consumed)>0)
           {
-            const int len=mbrtowc(&wt,source,n,&ps);
-            if(len>=0)
+            const size_t len2=mbrtowc(&wt,source,n,&ps);
+            if(!mbr_failed(len2))
             {
+              const size_t consumed2=(len2==0)?1:len2;
               s[1]=(uint16_t)wt;
               uint32_t w;
               if(UTF16toUCS4(w,s,s+2)>0)
               {
-                source+=len;
+                source+=consumed2;
                 retval=w;
               }
             }
@@ -850,7 +899,7 @@ GStringRep::Native::getValidUCS4(const char *&source) const
       }else
       {
         retval=(uint32_t)wt;
-        source++;
+        source+=consumed;
       } 
     }else
     {
@@ -1014,7 +1063,7 @@ GP<GStringRep>
 GStringRep::strdup(const char *s) const
 {
   GP<GStringRep> retval;
-  const int length=s?strlen(s):0;
+  const unsigned int length=s?size_to_uint(strlen(s)):0;
   if(length>0)
   {
     retval=blank(length);
@@ -1065,7 +1114,7 @@ GStringRep::substr(const char *s,const int start,const int len) const
     }
     if(endptr>startptr)
     {
-      retval=blank((size_t)(endptr-startptr));
+      retval=blank(size_to_uint((size_t)(endptr-startptr)));
       char *data=retval->data;
       for(; (startptr<endptr) && *startptr; ++startptr,++data)
       {
@@ -1183,9 +1232,10 @@ GStringRep::UTF8::append(const GP<GStringRep> &s2) const
 GP<GStringRep>
 GStringRep::concat(const char *s1,const char *s2) const
 {
-  const int length1=(s1?strlen(s1):0);
-  const int length2=(s2?strlen(s2):0);
-  const int length=length1+length2;
+  const unsigned int length1=(s1?size_to_uint(strlen(s1)):0);
+  const unsigned int length2=(s2?size_to_uint(strlen(s2)):0);
+  const unsigned int length=
+    (length1 > (UINT_MAX-length2)) ? UINT_MAX : (length1+length2);
   GP<GStringRep> retval;
   if(length>0)
   {
@@ -1217,7 +1267,7 @@ GStringRep::getbuf(int n) const
 {
   GP<GStringRep> retval;
   if(n < 0)
-    n=strlen(data);
+    n=size_to_int(strlen(data));
   if(n >= 0)
   {
     retval=blank((n>0) ? n : 1);
@@ -1512,7 +1562,8 @@ GUTF8String::fromEscaped( const GMap<GUTF8String,GUTF8String> ConvMap ) const
         {
           unsigned char utf8char[7];
           unsigned char const * const end=GStringRep::UCS4toUTF8(value,utf8char);
-          ret+=GUTF8String((char const *)utf8char,(size_t)end-(size_t)utf8char);
+          const unsigned int utf8len=(unsigned int)(end-utf8char);
+          ret+=GUTF8String((char const *)utf8char,utf8len);
         }else
         {
           ret += substr( amp_locn, semi_locn - amp_locn + 1 );
@@ -1845,7 +1896,7 @@ GStringRep::UTF8::ncopy(wchar_t * const buf, const int buflen ) const
 	  if(r<rend)
             {
               r[0]=0;
-              retval=((size_t)r-(size_t)buf)/sizeof(wchar_t);
+              retval=size_to_int((size_t)(r-buf));
             }
 	}
       else
@@ -2281,7 +2332,7 @@ GStringRep::UTF8::toLong(
   long retval=Cstrtol(data+pos,&edata, base);
   if(edata)
   {
-    endpos=edata-data;
+    endpos=size_to_int((size_t)(edata-data));
   }else
   {
     GP<GStringRep> ptr = GStringRep::UTF8::create();
@@ -2327,7 +2378,7 @@ GStringRep::UTF8::toULong(
   unsigned long retval=Cstrtoul(data+pos,&edata, base);
   if(edata)
   {
-    endpos=edata-data;
+    endpos=size_to_int((size_t)(edata-data));
   }else
   {
     GP<GStringRep> ptr = GStringRep::UTF8::create();
@@ -2372,7 +2423,7 @@ GStringRep::UTF8::toDouble(const int pos, int &endpos) const
   double retval=Cstrtod(data+pos,&edata);
   if(edata)
   {
-    endpos=edata-data;
+    endpos=size_to_int((size_t)(edata-data));
   }else
   {
     GP<GStringRep> ptr = GStringRep::UTF8::create();

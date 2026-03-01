@@ -70,6 +70,7 @@
 #ifndef macintosh
 # include <sys/types.h>
 #endif
+#include <limits.h>
 
 #ifdef HAVE_NAMESPACES
 namespace DJVU {
@@ -89,6 +90,23 @@ call_callback(void (* callback)(void *), void *cl_data)
       if (callback)
         callback(cl_data);
    } G_CATCH_ALL {} G_ENDCATCH;
+}
+
+static int
+size_to_int(size_t value)
+{
+  return (value > (size_t)INT_MAX) ? INT_MAX : (int)value;
+}
+
+static long
+add_size_to_long(long base, size_t delta)
+{
+  if (base < 0)
+    G_THROW( ERR_MSG("ByteStream.seek") );
+  const size_t ub = (size_t)base;
+  if (delta > (size_t)LONG_MAX - ub)
+    G_THROW( ERR_MSG("ByteStream.seek") );
+  return (long)(ub + delta);
 }
 
 
@@ -777,9 +795,9 @@ DataPool::create(const GP<ByteStream> &gstr)
   pool->add_trigger(0, 32, static_trigger_cb, pool);
 
   char buffer[1024];
-  int length;
+  size_t length;
   while((length=gstr->read(buffer, 1024)))
-    pool->add_data(buffer, length);
+    pool->add_data(buffer, size_to_int(length));
   pool->set_eof();
 
   return retval;
@@ -921,11 +939,11 @@ DataPool::connect(const GURL &furl_in, int start_in, int length_in)
       DEBUG_MSG("This is stdin => just read the data...\n");
       DEBUG_MAKE_INDENT(3);
       char buffer[1024];
-      int length;
+      size_t length;
       GP<ByteStream> gstr=ByteStream::create(furl_in, "rb");
       ByteStream &str=*gstr;
       while((length=str.read(buffer, 1024)))
-	 add_data(buffer, length);
+	 add_data(buffer, size_to_int(length));
       set_eof();
    } else if(furl_in.is_local_file_url())
    {
@@ -1187,7 +1205,7 @@ DataPool::get_data(void * buffer, int offset, int sz, int level)
          }
        GCriticalSectionLock lock2(&(f->stream_lock));
        f->stream->seek(start+offset, SEEK_SET); 
-       return f->stream->readall(buffer, sz);
+       return size_to_int(f->stream->readall(buffer, sz));
      } 
    else
      {
@@ -1200,7 +1218,7 @@ DataPool::get_data(void * buffer, int offset, int sz, int level)
            // Hooray! Some data is there
            GCriticalSectionLock lock(&data_lock);
            data->seek(offset, SEEK_SET);
-           return data->readall(buffer, size);
+           return size_to_int(data->readall(buffer, size));
          }
        
        // No data available.
@@ -1410,9 +1428,9 @@ DataPool::load_file(void)
          gbs->seek(0, SEEK_SET);
          
          char buffer[1024];
-         int length;
-         while((length = f->stream->read(buffer, 1024)))
-           add_data(buffer, length);
+          size_t length;
+          while((length = f->stream->read(buffer, 1024)))
+            add_data(buffer, size_to_int(length));
          set_eof();
          
          OpenFiles::get()->stream_released(f->stream, this);
@@ -1700,12 +1718,13 @@ PoolByteStream::read(void *data, size_t size)
   if (buffer_pos >= buffer_size) {
     if (size >= sizeof(buffer)) {
       // Direct read
-      size = data_pool->get_data(data, position, size);
-      position += size;
+      const int request = size_to_int(size);
+      size = (size_t)data_pool->get_data(data, position, request);
+      position = add_size_to_long(position, size);
       return size;
     } else {
       // Refill buffer
-      buffer_size = data_pool->get_data(buffer, position, sizeof(buffer));
+      buffer_size = (size_t)data_pool->get_data(buffer, position, sizeof(buffer));
       buffer_pos=0;
     }
   }
@@ -1713,7 +1732,7 @@ PoolByteStream::read(void *data, size_t size)
     size = buffer_size - buffer_pos;
   memcpy(data, buffer+buffer_pos, size);
   buffer_pos += size;
-  position += size;
+  position = add_size_to_long(position, size);
   return size;
 }
 

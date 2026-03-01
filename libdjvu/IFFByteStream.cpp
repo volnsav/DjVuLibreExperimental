@@ -68,6 +68,7 @@
 // with their re-implementation of ByteStreams.
 
 #include <assert.h>
+#include <limits.h>
 #include "IFFByteStream.h"
 
 
@@ -77,6 +78,14 @@ namespace DJVU {
 }
 #endif
 #endif
+
+static inline long
+add_to_offset(const long base, const size_t delta)
+{
+  if (delta > (size_t)LONG_MAX || base > LONG_MAX - (long)delta)
+    G_THROW( ERR_MSG("IFFByteStream.bad_offset") );
+  return base + (long)delta;
+}
 
 
 // Constructor
@@ -167,7 +176,7 @@ IFFByteStream::check_id(const char *id)
 int  
 IFFByteStream::get_chunk(GUTF8String &chkid, int *rawoffsetptr, int *rawsizeptr)
 {
-  int bytes;
+  size_t bytes;
   char buffer[8];
   
   // Check that we are allowed to read a chunk
@@ -192,7 +201,7 @@ IFFByteStream::get_chunk(GUTF8String &chkid, int *rawoffsetptr, int *rawsizeptr)
       bytes = bs->read( (void*)buffer, 1);
       if (bytes==0 && !ctx)
         return 0;
-      offset += bytes;
+      offset = add_to_offset(offset, bytes);
     }
   
   // Record raw offset
@@ -207,10 +216,10 @@ IFFByteStream::get_chunk(GUTF8String &chkid, int *rawoffsetptr, int *rawsizeptr)
     if (ctx && offset+4 > ctx->offEnd)
       G_THROW( ERR_MSG("IFFByteStream.corrupt_end") );
     bytes = bs->readall( (void*)&buffer[0], 4);
-    offset = seekto = offset + bytes;
+    offset = seekto = add_to_offset(offset, bytes);
     if (bytes==0 && !ctx)
       return 0;
-    if (bytes != 4)
+    if (bytes != 4u)
       G_THROW(ByteStream::EndOfFile);
     if (buffer[0] == 'S' && buffer[1] == 'D' &&
         buffer[2] == 'J' && buffer[3] == 'V' )
@@ -232,8 +241,8 @@ IFFByteStream::get_chunk(GUTF8String &chkid, int *rawoffsetptr, int *rawsizeptr)
   if (ctx && offset+4 > ctx->offEnd)
     G_THROW( ERR_MSG("IFFByteStream.corrupt_end2") );
   bytes = bs->readall( (void*)&buffer[4], 4);
-  offset = seekto = offset + bytes;
-  if (bytes != 4)
+  offset = seekto = add_to_offset(offset, bytes);
+  if (bytes != 4u)
     G_THROW( ByteStream::EndOfFile );
   long size = ((unsigned char)buffer[4]<<24) |
               ((unsigned char)buffer[5]<<16) |
@@ -253,8 +262,8 @@ IFFByteStream::get_chunk(GUTF8String &chkid, int *rawoffsetptr, int *rawsizeptr)
     if (ctx && ctx->offEnd<offset+4)
       G_THROW( ERR_MSG("IFFByteStream.corrupt_header") );
     bytes = bs->readall( (void*)&buffer[4], 4);
-    offset += bytes;
-    if (bytes != 4)
+    offset = add_to_offset(offset, bytes);
+    if (bytes != 4u)
       G_THROW( ByteStream::EndOfFile );
     if (check_id(&buffer[4]))
       G_THROW( ERR_MSG("IFFByteStream.corrupt_2nd_id") );
@@ -309,7 +318,7 @@ IFFByteStream::get_chunk(GUTF8String &chkid, int *rawoffsetptr, int *rawsizeptr)
 void  
 IFFByteStream::put_chunk(const char *chkid, int insert_magic)
 {
-  int bytes;
+  size_t bytes;
   char buffer[8];
 
   // Check that we are allowed to write a chunk
@@ -329,7 +338,7 @@ IFFByteStream::put_chunk(const char *chkid, int insert_magic)
   assert(seekto <= offset);
   memset((void*)buffer, 0, 8);
   if (offset & 1)
-    offset += bs->write((void*)&buffer[4], 1);
+    offset = add_to_offset(offset, bs->write((void*)&buffer[4], 1));
 
   // Insert magic to make this file recognizable as DjVu
   if (insert_magic)
@@ -341,18 +350,18 @@ IFFByteStream::put_chunk(const char *chkid, int insert_magic)
     buffer[1]=0x54;
     buffer[2]=0x26;
     buffer[3]=0x54;
-    offset += bs->writall((void*)&buffer[0], 4);
+    offset = add_to_offset(offset, bs->writall((void*)&buffer[0], 4));
   }
 
   // Write chunk header
   memcpy((void*)&buffer[0], (void*)&chkid[0], 4);
   bytes = bs->writall((void*)&buffer[0], 8);
-  offset = seekto = offset + bytes;
+  offset = seekto = add_to_offset(offset, bytes);
   if (composite)
   {
     memcpy((void*)&buffer[4], (void*)&chkid[5], 4);
     bytes = bs->writall((void*)&buffer[4], 4);
-    offset = offset + bytes;    
+    offset = add_to_offset(offset, bytes);
   }
 
   // Create new context record
@@ -487,7 +496,7 @@ IFFByteStream::read(void *buffer, size_t size)
     size = (size_t) (ctx->offEnd - offset);
   // Read bytes
   size_t bytes = bs->read(buffer, size);
-  offset += bytes;
+  offset = add_to_offset(offset, bytes);
   return bytes;
 }
 
@@ -503,7 +512,7 @@ IFFByteStream::write(const void *buffer, size_t size)
   if (seekto > offset)
     G_THROW( ERR_MSG("IFFByteStream.cant_write") );
   size_t bytes = bs->write(buffer, size);
-  offset += bytes;
+  offset = add_to_offset(offset, bytes);
   return bytes;
 }
 
@@ -536,14 +545,14 @@ IFFByteStream::compare(IFFByteStream &iff)
         break;
       }
       char buf[4096];
-      int len;
-      while((len=read(buf,sizeof(buf))))
+      size_t len;
+      while((len=read(buf,sizeof(buf)))!=0)
       {
-        int s=0;
+        size_t s=0;
         char buf2[sizeof(buf)];
         while(s<len)
         {
-          const int i=iff.read(buf2+s,len-s);
+          const size_t i=iff.read(buf2+s,len-s);
           if(!i)
             break;
           s+=i;

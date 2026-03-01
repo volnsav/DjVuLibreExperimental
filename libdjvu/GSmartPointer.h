@@ -61,6 +61,7 @@
 #if NEED_GNUG_PRAGMAS
 # pragma interface
 #endif
+#include <limits.h>
 
 /** @name GSmartPointer.h
 
@@ -497,7 +498,7 @@ public:
   void replace(void *nptr,const size_t n);
   void set(const size_t t,const char c);
   ~GPBufferBase();
-  operator int(void) const { return ptr ? num : 0; }
+  operator int(void) const { return ptr ? ((num > (size_t)INT_MAX) ? INT_MAX : (int)num) : 0; }
 private:
   void *&ptr;
   size_t num;

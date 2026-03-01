@@ -74,6 +74,7 @@
 #include "GURL.h"
 #include "DjVuMessage.h"
 #include <stddef.h>
+#include <limits.h>
 #include <fcntl.h>
 #if defined(_WIN32) || defined(__CYGWIN32__)
 # include <io.h>
@@ -123,6 +124,14 @@ namespace DJVU {
 #endif
 
 const char *ByteStream::EndOfFile=ERR_MSG("EOF");
+
+static inline long
+add_size_to_long(const long base, const size_t delta)
+{
+  if (delta > (size_t)LONG_MAX || base > LONG_MAX - (long)delta)
+    G_THROW( ERR_MSG("ByteStream.seek") );
+  return base + (long)delta;
+}
 
 /** ByteStream interface for stdio files. 
     The virtual member functions #read#, #write#, #tell# and #seek# are mapped
@@ -368,7 +377,7 @@ ByteStream::seek(long offset, int whence, bool nothrow)
             G_THROW( ERR_MSG("ByteStream.backward") );
           }
         char buffer[1024];
-        int bytes;
+        size_t bytes;
         while((bytes=read(buffer, sizeof(buffer))))
           EMPTY_LOOP;
         return 0;
@@ -407,13 +416,7 @@ ByteStream::readall(void *buffer, size_t size)
   size_t total = 0;
   while (size > 0)
     {
-      int nitems = read(buffer, size);
-      // Replaced perror() below with G_THROW(). It still makes little sense
-      // as there is no guarantee, that errno is right. Still, throwing
-      // exception instead of continuing to loop is better.
-      // - eaf
-      if(nitems < 0) 
-        G_THROW(strerror(errno));               //  (No error in the DjVuMessageFile)
+      const size_t nitems = read(buffer, size);
       if (nitems == 0)
         break;
       total += nitems;
@@ -435,7 +438,7 @@ ByteStream::format(const char *fmt, ... )
 size_t
 ByteStream::writestring(const GNativeString &s)
 {
-  int retval;
+  size_t retval;
   if(cp != UTF8)
   {
     retval=writall((const char *)s,s.length());
@@ -452,7 +455,7 @@ ByteStream::writestring(const GNativeString &s)
 size_t
 ByteStream::writestring(const GUTF8String &s)
 {
-  int retval;
+  size_t retval;
   if(cp != NATIVE)
   {
     retval=writall((const char *)s,s.length());
@@ -657,9 +660,11 @@ ByteStream::Stdio::init(const char mode[])
 static wchar_t *
 utf8_to_wide(const char *cstr)
 {
-  int wlen = strlen(cstr) + 1;
+  const size_t wlen = strlen(cstr) + 1;
+  if (wlen > (size_t)INT_MAX)
+    return 0;
   wchar_t *wstr = new wchar_t[wlen];
-  if (GUTF8String(cstr).ncopy(wstr, wlen) > 0)
+  if (GUTF8String(cstr).ncopy(wstr, (int)wlen) > 0)
     return wstr;
   delete [] wstr;
   return 0;
@@ -771,7 +776,7 @@ ByteStream::Stdio::read(void *buffer, size_t size)
     else
       break;
   } while(true);
-  pos += nitems;
+  pos = add_size_to_long(pos, nitems);
   return nitems;
 }
 
@@ -795,7 +800,7 @@ ByteStream::Stdio::write(const void *buffer, size_t size)
     else
       break;
   } while(true);
-  pos += nitems;
+  pos = add_size_to_long(pos, nitems);
   return nitems;
 }
 
@@ -951,7 +956,7 @@ size_t
 ByteStream::Memory::read(void *buffer, size_t sz)
 {
   sz = readat(buffer,sz,where);
-  where += sz;
+  where = add_size_to_long(where, sz);
   return sz;
 }
 
@@ -998,7 +1003,9 @@ ByteStream::get_data(void)
 ///////// ByteStream::Static
 
 ByteStream::Static::Static(const void * const buffer, const size_t sz)
-  : data((const char *)buffer), bsize(sz), where(0)
+  : data((const char *)buffer),
+    bsize((sz > (size_t)LONG_MAX) ? LONG_MAX : (long)sz),
+    where(0)
 {
 }
 
@@ -1313,19 +1320,19 @@ void ByteStream::writemessage( const char *message )
 static void 
 read_file(ByteStream &bs,char *&buffer,GPBuffer<char> &gbuffer)
 {
-  const int size=bs.size();
-  int pos=0;
+  const long size=bs.size();
+  size_t pos=0;
   if(size>0)
   {
-    size_t readsize=size+1;
+    size_t readsize=(size_t)size+1;
     gbuffer.resize(readsize);
-    for(int i;readsize&&(i=bs.read(buffer+pos,readsize))>0;pos+=i,readsize-=i)
+    for(size_t i;readsize&&((i=bs.read(buffer+pos,readsize))>0);pos+=i,readsize-=i)
       EMPTY_LOOP;
   }else
   {
     const size_t readsize=32768;
     gbuffer.resize(readsize);
-    for(int i;((i=bs.read(buffer+pos,readsize))>0);
+    for(size_t i;((i=bs.read(buffer+pos,readsize))>0);
       gbuffer.resize((pos+=i)+readsize))
       EMPTY_LOOP;
   }
