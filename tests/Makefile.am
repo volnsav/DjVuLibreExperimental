@@ -12,6 +12,7 @@ check_PROGRAMS += libdjvu_gtest
 TESTS += libdjvu_gtest
 
 libdjvu_gtest_CPPFLAGS = $(AM_CPPFLAGS) $(GTEST_CPPFLAGS)
-libdjvu_gtest_SOURCES = libdjvu_gtest.cpp
+# Add new class tests as separate files matching tests/gtest/test_*.cpp.
+libdjvu_gtest_SOURCES = gtest_main.cpp $(wildcard gtest/test_*.cpp)
 libdjvu_gtest_LDADD = $(top_builddir)/libdjvu/libdjvulibre.la $(GTEST_LIBS)
 endif

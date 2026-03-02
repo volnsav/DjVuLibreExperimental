@@ -93,16 +93,41 @@ jobs:
             }
           }
 
-      - name: Build (Release x64)
+      - name: Setup vcpkg + gtest
+        shell: pwsh
+        run: |
+          $vcpkgRoot = Join-Path $env:RUNNER_TEMP "vcpkg"
+          git clone https://github.com/microsoft/vcpkg $vcpkgRoot
+          & (Join-Path $vcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
+          & (Join-Path $vcpkgRoot "vcpkg.exe") install gtest:x64-windows
+          if ($LASTEXITCODE -ne 0) {
+            throw "vcpkg install gtest failed with exit code $LASTEXITCODE"
+          }
+          "VCPKG_ROOT=$vcpkgRoot" >> $env:GITHUB_ENV
+
+      - name: Build tests (Release x64)
         shell: pwsh
         run: |
           msbuild windows\djvulibre\djvulibre.sln `
             /m `
-            /t:libdjvulibre `
+            "/t:libdjvu_smoke_test;libdjvu_gtest" `
             /p:Configuration=Release `
             /p:Platform=x64 `
             /p:PlatformToolset=${{ steps.toolset.outputs.value }} `
-            /p:DjvuPlatformToolset=${{ steps.toolset.outputs.value }}
+            /p:DjvuPlatformToolset=${{ steps.toolset.outputs.value }} `
+            /p:VcpkgRoot=$env:VCPKG_ROOT `
+            /p:VcpkgTriplet=x64-windows
+
+      - name: Run smoke test
+        shell: pwsh
+        run: |
+          .\windows\build\Release\x64\libdjvu_smoke_test.exe
+
+      - name: Run gtest suite
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:VCPKG_ROOT\installed\x64-windows\bin;$env:PATH"
+          .\windows\build\Release\x64\libdjvu_gtest.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -218,17 +243,49 @@ jobs:
             }
           }
 
-      - name: Build (${{ matrix.config }} x64)
+      - name: Setup vcpkg + gtest
+        if: ${{ steps.mode.outputs.run == 'true' }}
+        shell: pwsh
+        run: |
+          $vcpkgRoot = Join-Path $env:RUNNER_TEMP "vcpkg"
+          git clone https://github.com/microsoft/vcpkg $vcpkgRoot
+          & (Join-Path $vcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
+          & (Join-Path $vcpkgRoot "vcpkg.exe") install gtest:x64-windows
+          if ($LASTEXITCODE -ne 0) {
+            throw "vcpkg install gtest failed with exit code $LASTEXITCODE"
+          }
+          "VCPKG_ROOT=$vcpkgRoot" >> $env:GITHUB_ENV
+
+      - name: Build tests (${{ matrix.config }} x64)
         if: ${{ steps.mode.outputs.run == 'true' }}
         shell: pwsh
         run: |
           msbuild windows\djvulibre\djvulibre.sln `
             /m `
-            /t:libdjvulibre `
+            "/t:libdjvu_smoke_test;libdjvu_gtest" `
             /p:Configuration=${{ matrix.config }} `
             /p:Platform=x64 `
             /p:PlatformToolset=${{ steps.toolset.outputs.value }} `
-            /p:DjvuPlatformToolset=${{ steps.toolset.outputs.value }}
+            /p:DjvuPlatformToolset=${{ steps.toolset.outputs.value }} `
+            /p:VcpkgRoot=$env:VCPKG_ROOT `
+            /p:VcpkgTriplet=x64-windows
+
+      - name: Run smoke test
+        if: ${{ steps.mode.outputs.run == 'true' }}
+        shell: pwsh
+        run: |
+          .\windows\build\${{ matrix.config }}\x64\libdjvu_smoke_test.exe
+
+      - name: Run gtest suite
+        if: ${{ steps.mode.outputs.run == 'true' }}
+        shell: pwsh
+        run: |
+          if ('${{ matrix.config }}' -eq 'Debug') {
+            $env:PATH = "$env:VCPKG_ROOT\installed\x64-windows\debug\bin;$env:PATH"
+          } else {
+            $env:PATH = "$env:VCPKG_ROOT\installed\x64-windows\bin;$env:PATH"
+          }
+          .\windows\build\${{ matrix.config }}\x64\libdjvu_gtest.exe
 
       - name: Upload artifact
         if: ${{ steps.mode.outputs.run == 'true' }}
