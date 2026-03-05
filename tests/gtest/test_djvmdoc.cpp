@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <filesystem>
+
 #include "ByteStream.h"
 #include "DataPool.h"
 #include "DjVmDoc.h"
@@ -21,6 +24,13 @@ GP<ByteStream> MakeMinimalDjvuFile()
 
   bs->seek(0, SEEK_SET);
   return bs;
+}
+
+std::filesystem::path MakeTempPath(const char *suffix)
+{
+  const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+  return std::filesystem::temp_directory_path() /
+         ("djvu_gtest_djvmdoc_" + std::to_string(now) + "_" + suffix);
 }
 
 }  // namespace
@@ -89,4 +99,37 @@ TEST(DjVmDocTest, WriteThenReadRoundtripPreservesDirectory)
   ASSERT_TRUE(dir != 0);
   EXPECT_EQ(2, dir->get_files_num());
   EXPECT_EQ(2, dir->get_pages_num());
+}
+
+TEST(DjVmDocTest, ExpandReadByUrlAndWriteIndexPaths)
+{
+  const std::filesystem::path out_dir = MakeTempPath("expand");
+  std::filesystem::create_directories(out_dir);
+  const GURL codebase = GURL::Filename::UTF8(out_dir.string().c_str());
+
+  GP<DjVmDoc> writer = DjVmDoc::create();
+  ASSERT_TRUE(writer != 0);
+  GP<ByteStream> p1 = MakeMinimalDjvuFile();
+  GP<ByteStream> p2 = MakeMinimalDjvuFile();
+  writer->insert_file(*p1, DjVmDir::File::PAGE, "p1.djvu", "p1.djvu", "P1");
+  writer->insert_file(*p2, DjVmDir::File::PAGE, "p2.djvu", "p2.djvu", "P2");
+  writer->expand(codebase, "index.djvu");
+
+  const GURL index_url = GURL::Filename::UTF8((out_dir / "index.djvu").string().c_str());
+  GP<DjVmDoc> reader = DjVmDoc::create();
+  ASSERT_TRUE(reader != 0);
+  reader->read(index_url);
+
+  GP<DjVmDir> dir = reader->get_djvm_dir();
+  ASSERT_TRUE(dir != 0);
+  EXPECT_EQ(2, dir->get_pages_num());
+
+  GP<ByteStream> idx = ByteStream::create();
+  EXPECT_NO_THROW(reader->write_index(idx));
+  EXPECT_GT(idx->size(), 0);
+
+  GP<DjVmDir::File> page0 = dir->page_to_file(0);
+  ASSERT_TRUE(page0 != 0);
+  EXPECT_NO_THROW(reader->save_page(codebase, *page0));
+  EXPECT_NO_THROW(reader->save_file(codebase, *page0));
 }

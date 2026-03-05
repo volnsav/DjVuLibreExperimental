@@ -7,10 +7,17 @@
 
 TEST(GOSTest, BasenameExtractsLastComponent)
 {
+#if defined(_WIN32)
   EXPECT_STREQ("file.djvu", GOS::basename("C:\\temp\\file.djvu"));
   EXPECT_STREQ("file", GOS::basename("C:\\temp\\file.djvu", ".djvu"));
   EXPECT_STREQ("file", GOS::basename("C:\\temp\\file.DJVU", ".djvu"));
   EXPECT_STREQ("file", GOS::basename("C:\\temp\\file.djvu", "djvu"));
+#else
+  EXPECT_STREQ("file.djvu", GOS::basename("/tmp/file.djvu"));
+  EXPECT_STREQ("file", GOS::basename("/tmp/file.djvu", ".djvu"));
+  EXPECT_STREQ("file", GOS::basename("/tmp/file.DJVU", ".djvu"));
+  EXPECT_STREQ("file", GOS::basename("/tmp/file.djvu", "djvu"));
+#endif
 }
 
 TEST(GOSTest, CwdReturnsNonEmptyAndCanRestoreAfterChange)

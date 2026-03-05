@@ -64,3 +64,39 @@ TEST(DjVuInfoTest, DecodeRejectsTooShortPayload)
   GP<DjVuInfo> decoded = DjVuInfo::create();
   EXPECT_THROW(decoded->decode(*bs), GException);
 }
+
+TEST(DjVuInfoTest, DecodeFiveBytePayloadKeepsDefaultDpiGammaAndOrientation)
+{
+  GP<ByteStream> bs = ByteStream::create();
+  bs->write8(0x00); bs->write8(0x64); // width 100
+  bs->write8(0x00); bs->write8(0x32); // height 50
+  bs->write8(0x17);                   // version low only (legacy payload)
+  bs->seek(0, SEEK_SET);
+
+  GP<DjVuInfo> decoded = DjVuInfo::create();
+  decoded->decode(*bs);
+
+  EXPECT_EQ(100, decoded->width);
+  EXPECT_EQ(50, decoded->height);
+  EXPECT_EQ(23, decoded->version);
+  EXPECT_EQ(300, decoded->dpi);
+  EXPECT_DOUBLE_EQ(2.2, decoded->gamma);
+  EXPECT_EQ(0, decoded->orientation);
+}
+
+TEST(DjVuInfoTest, DecodeClampsTooLargeGamma)
+{
+  GP<ByteStream> bs = ByteStream::create();
+  bs->write8(0x00); bs->write8(0x20); // width
+  bs->write8(0x00); bs->write8(0x10); // height
+  bs->write8(0x18);                   // version low
+  bs->write8(0x00);                   // version high
+  bs->write8(0x2c); bs->write8(0x01); // dpi 300
+  bs->write8(60);                     // gamma 6.0 -> clamp to 5.0
+  bs->write8(0);                      // orientation flags
+  bs->seek(0, SEEK_SET);
+
+  GP<DjVuInfo> decoded = DjVuInfo::create();
+  decoded->decode(*bs);
+  EXPECT_DOUBLE_EQ(5.0, decoded->gamma);
+}

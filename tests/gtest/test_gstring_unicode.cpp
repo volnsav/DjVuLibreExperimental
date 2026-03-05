@@ -10,8 +10,12 @@ TEST(GStringUnicodeTest, CreateFromUtf16AndUcs4Buffers)
   GUTF8String from_utf16 = GUTF8String::create(utf16_data, 2);
   EXPECT_STREQ("A\xD0\x96", from_utf16);
 
-  const uint32_t ucs4_data[] = {0x0042, 0x03A9}; // "BΩ"
-  GUTF8String from_ucs4 = GUTF8String::create(ucs4_data, 2);
+  const unsigned char ucs4be_data[] = {
+      0x00, 0x00, 0x00, 0x42, // 'B'
+      0x00, 0x00, 0x03, 0xA9  // 'Ω'
+  };
+  GUTF8String from_ucs4 =
+      GUTF8String::create(ucs4be_data, sizeof(ucs4be_data), GStringRep::XUCS4BE);
   EXPECT_STREQ("B\xCE\xA9", from_ucs4);
 }
 

@@ -82,3 +82,71 @@ TEST(DjVuPortTest, MemoryPortReturnsMappedDataPool)
   GUTF8String text = out->getAsUTF8();
   EXPECT_GE(text.search("memory-data"), 0);
 }
+
+TEST(DjVuPortTest, ClosestRouteConsumesErrorBeforeFartherRoute)
+{
+  GP<RecordingPort> src = new RecordingPort();
+  GP<RecordingPort> mid = new RecordingPort();
+  GP<RecordingPort> far = new RecordingPort();
+  DjVuPortcaster *pc = DjVuPort::get_portcaster();
+
+  mid->consume_error = true;
+  pc->add_route(src, mid);
+  pc->add_route(mid, far);
+
+  EXPECT_TRUE(pc->notify_error(src, GUTF8String("err")));
+  EXPECT_EQ(1, mid->error_count);
+  EXPECT_EQ(0, far->error_count);
+}
+
+TEST(DjVuPortTest, CopyConstructedPortCanBeRoutedAndUsed)
+{
+  GP<RecordingPort> src = new RecordingPort();
+  GP<RecordingPort> dst = new RecordingPort();
+  DjVuPortcaster *pc = DjVuPort::get_portcaster();
+
+  GP<RecordingPort> src_copy = new RecordingPort(*src);
+  pc->add_route(src_copy, dst);
+  EXPECT_TRUE(pc->notify_status(src_copy, GUTF8String("status-from-copy")));
+  EXPECT_EQ(1, dst->status_count);
+}
+
+TEST(DjVuPortTest, AssignmentCopiesOutgoingRoutes)
+{
+  GP<RecordingPort> src = new RecordingPort();
+  GP<RecordingPort> dst = new RecordingPort();
+  GP<RecordingPort> assigned = new RecordingPort();
+  DjVuPortcaster *pc = DjVuPort::get_portcaster();
+
+  pc->add_route(src, dst);
+  *assigned = *src;
+
+  EXPECT_TRUE(pc->notify_status(assigned, GUTF8String("status-from-assigned")));
+  EXPECT_EQ(1, dst->status_count);
+}
+
+TEST(DjVuPortTest, DelPortRemovesRoutesAndAliases)
+{
+  GP<RecordingPort> src = new RecordingPort();
+  GP<RecordingPort> dst = new RecordingPort();
+  DjVuPortcaster *pc = DjVuPort::get_portcaster();
+
+  DjVuPortcaster::clear_all_aliases();
+  pc->add_alias(src, "gtest.delport.alias");
+  pc->add_route(src, dst);
+  EXPECT_TRUE(pc->notify_status(src, GUTF8String("before-delete")));
+  EXPECT_EQ(1, dst->status_count);
+
+  pc->del_port(src);
+  EXPECT_TRUE(pc->alias_to_port("gtest.delport.alias") == 0);
+  EXPECT_FALSE(pc->notify_status(src, GUTF8String("after-delete")));
+  EXPECT_EQ(1, dst->status_count);
+}
+
+TEST(DjVuPortTest, MemoryPortReturnsNullForUnknownUrl)
+{
+  GP<DjVuMemoryPort> mem_port = new DjVuMemoryPort();
+  const GURL missing = GURL::UTF8("http://example.com/missing.bin");
+  GP<DataPool> out_pool = mem_port->request_data(nullptr, missing);
+  EXPECT_TRUE(out_pool == 0);
+}
