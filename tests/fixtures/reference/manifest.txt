@@ -1,0 +1,8 @@
+sp_bg_only.djvu -> bg:#E6F0FF,text:no,hidden:no,links:no,pages:1,format:bundled
+sp_bg_fgtext.djvu -> bg:#E6F0FF,text:VISIBLE_TEXT_PAGE1_123,hidden:no,links:no,pages:1,format:bundled
+sp_bg_fgtext_hidden.djvu -> bg:#E6F0FF,text:VISIBLE_TEXT_PAGE1_123,hidden:HIDDEN_TEXT_PAGE1_ABC,links:no,pages:1,format:bundled
+sp_bg_fgtext_hidden_links.djvu -> bg:#E6F0FF,text:VISIBLE_TEXT_PAGE1_123,hidden:HIDDEN_TEXT_PAGE1_ABC,links:external+internal-self,pages:1,format:bundled
+mp2_bundled.djvu -> p1:bg:#E6F0FF+visible+hidden,p2:bg:#FFF3E0+VISIBLE_TEXT_PAGE2_456,links:internal(1->2),pages:2,format:bundled
+mp2_indirect/index.djvu -> same as mp2_bundled,links:internal(1->2),pages:2,format:indirect
+sp_unicode_hidden.djvu -> bg:#E6F0FF,text:VISIBLE_TEXT_PAGE1_123,hidden:Привіт DjVu тест 123,links:no,pages:1,format:bundled
+sp_bg_only_large.djvu -> bg:#E6F0FF,text:no,hidden:no,links:no,pages:1,size:2000x1500,format:bundled
