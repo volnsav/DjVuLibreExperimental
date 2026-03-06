@@ -532,22 +532,12 @@ GURL::hash_argument(void) const
       // Returns the HASH argument (anything after '#' and before '?')
 {
    const GUTF8String xurl(get_string());
-
-   bool found=false;
-   GUTF8String arg;
-
-         // Break if CGI argument is found
-   for(const char * start=xurl;*start&&(*start!='?');start++)
+   int hash_pos = xurl.search('#');
+   if (hash_pos != -1)
    {
-      if (found)
-      {
-         arg+=*start;
-      }else
-      {
-         found=(*start=='#');
-      }
+     return decode_reserved(xurl.substr(hash_pos + 1, -1));
    }
-   return decode_reserved(arg);
+   return GUTF8String();
 }
 
 void
@@ -957,9 +947,25 @@ pathname_start(const GUTF8String &url, const int protolength)
 GUTF8String
 GURL::pathname(void) const
 {
-  return (is_local_file_url())
-    ?GURL::encode_reserved(UTF8Filename()) 
-    :url.substr(pathname_start(url,protocol().length()),(unsigned int)(-1));
+  if (is_local_file_url())
+  {
+    return GURL::encode_reserved(UTF8Filename());
+  }
+  else
+  {
+    GUTF8String result = url.substr(pathname_start(url, protocol().length()), -1);
+    int query_pos = result.search('?');
+    if (query_pos != -1)
+    {
+      result.setat(query_pos, 0);
+    }
+    int hash_pos = result.search('#');
+    if (hash_pos != -1)
+    {
+      result.setat(hash_pos, 0);
+    }
+    return result;
+  }
 }
 
 GURL

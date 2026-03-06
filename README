@@ -238,6 +238,23 @@ You may instead specify an alternate directory with DESTDIR=...
    Then collect the djvulibre dll from directory libdjvu/.libs
    and the executables from directory tools/.libs 
    Please refer to the file INSTALL for information
+
+5.3- Running library smoke tests natively on Windows
+----------------------------------------------------
+
+   A native MSVC smoke test project is available in:
+     windows/djvulibre/libdjvu_smoke_test/libdjvu_smoke_test.vcxproj
+
+   You can run it from PowerShell without WSL:
+     $ .\scripts\run_windows_tests.ps1 -Configuration Debug -Platform x64 -Toolset auto
+
+   Notes:
+   - The script auto-detects Visual Studio/Build Tools and initializes the MSVC environment itself.
+   - The script builds and runs both `libdjvu_smoke_test` and `libdjvu_gtest`.
+   - GoogleTest is taken from `GTEST_ROOT` or `third_party\googletest` when available; otherwise the script falls back to `vcpkg` (`gtest:<triplet>`).
+   - New unit tests are auto-picked from files matching `tests/gtest/test_*.cpp`.
+   - Third-party dependency folders under `windows\jpeg`, `windows\zlib`, and `windows\tiff`
+     must be populated the same way as for normal Windows builds.
    about the arguments of the script 'configure'.
 
 
