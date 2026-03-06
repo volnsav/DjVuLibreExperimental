@@ -556,21 +556,28 @@ DjVuMessage::~DjVuMessage( )
 }
 
 
+#ifdef HAVE_NAMESPACES
+}
+# ifndef NOT_USING_DJVU_NAMESPACE
+using namespace DJVU;
+# endif
+#endif
+
 //  A C function to perform a message lookup. Arguments are a buffer to receiv
 //  translated message, a buffer size (bytes), and a message_list. The transla
 //  result is returned in msg_buffer encoded in Native MBS encoding. In case
 // of error, msg_b empty (i.e., msg_buffer[0] == '\0').
 void
-DjVuMessageLookUpNative( 
+DjVuMessageLookUpNative(
   char *msg_buffer, const unsigned int buffer_size, const char *message)
 {
   if (!msg_buffer || buffer_size == 0)
     return;
-  const GNativeString converted(DjVuMessage::LookUpNative( message ));
+  const GNativeString converted(DjVuMessage::LookUpNative(message));
   if( converted.length() >= buffer_size )
     msg_buffer[0] = '\0';
   else
-    strcpy( msg_buffer, converted );
+    strcpy(msg_buffer, converted);
 }
 
 //  A C function to perform a message lookup. Arguments are a buffer to receiv
@@ -578,26 +585,17 @@ DjVuMessageLookUpNative(
 //  result is returned in msg_buffer encoded in UTF8 encoding. In case
 // of error, msg_b empty (i.e., msg_buffer[0] == '\0').
 void
-DjVuMessageLookUpUTF8( 
+DjVuMessageLookUpUTF8(
   char *msg_buffer, const unsigned int buffer_size, const char *message)
 {
   if (!msg_buffer || buffer_size == 0)
     return;
-  const GUTF8String converted(DjVuMessage::LookUpUTF8( message ));
+  const GUTF8String converted(DjVuMessage::LookUpUTF8(message));
   if( converted.length() >= buffer_size )
     msg_buffer[0] = '\0';
   else
-    strcpy( msg_buffer, converted );
+    strcpy(msg_buffer, converted);
 }
-
-
-
-#ifdef HAVE_NAMESPACES
-}
-# ifndef NOT_USING_DJVU_NAMESPACE
-using namespace DJVU;
-# endif
-#endif
 
 void
 DjVuFormatErrorUTF8( const char *fmt, ... )
