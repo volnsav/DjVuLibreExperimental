@@ -1,8 +1,15 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <vector>
+
 #include "BSByteStream.h"
 #include "ByteStream.h"
 #include "DjVuAnno.h"
+#include "DjVuDocument.h"
 #include "DjVuFile.h"
 #include "DjVuImage.h"
 #include "DjVuInfo.h"
@@ -32,6 +39,75 @@ GP<ByteStream> MakeDjvuWithInfo()
   iff->close_chunk();
   bs->seek(0, SEEK_SET);
   return bs;
+}
+
+std::optional<std::filesystem::path> FindReferenceFixtureFile(const char *name)
+{
+  const std::filesystem::path p1 = std::filesystem::path("tests/fixtures/reference") / name;
+  if (std::filesystem::exists(p1))
+    return p1;
+  const std::filesystem::path p2 = std::filesystem::path("fixtures/reference") / name;
+  if (std::filesystem::exists(p2))
+    return p2;
+  return std::nullopt;
+}
+
+std::string ReadAll(const GP<ByteStream> &bs)
+{
+  GP<ByteStream> in = bs;
+  in->seek(0, SEEK_SET);
+  std::string out;
+  char chunk[512];
+  while (const size_t got = in->read(chunk, sizeof(chunk)))
+    out.append(chunk, got);
+  return out;
+}
+
+struct XmlSignals
+{
+  bool has_object = false;
+  bool has_map = false;
+  bool has_hidden = false;
+  bool has_meta = false;
+  size_t area_count = 0;
+  size_t word_count = 0;
+
+  bool operator==(const XmlSignals &other) const
+  {
+    return has_object == other.has_object &&
+           has_map == other.has_map &&
+           has_hidden == other.has_hidden &&
+           has_meta == other.has_meta &&
+           area_count == other.area_count &&
+           word_count == other.word_count;
+  }
+};
+
+size_t CountOccurrences(const std::string &text, const std::string &needle)
+{
+  size_t count = 0;
+  size_t pos = 0;
+  while ((pos = text.find(needle, pos)) != std::string::npos)
+  {
+    ++count;
+    pos += needle.size();
+  }
+  return count;
+}
+
+XmlSignals CollectXmlSignals(const GP<DjVuImage> &image, const GURL &doc_url)
+{
+  GP<ByteStream> xml = ByteStream::create();
+  EXPECT_NO_THROW(image->writeXML(*xml, doc_url));
+  const std::string text = ReadAll(xml);
+  XmlSignals out;
+  out.has_object = text.find("<OBJECT") != std::string::npos;
+  out.has_map = text.find("<MAP") != std::string::npos;
+  out.has_hidden = text.find("HIDDENTEXT") != std::string::npos;
+  out.has_meta = text.find("<METADATA") != std::string::npos;
+  out.area_count = CountOccurrences(text, "<AREA");
+  out.word_count = CountOccurrences(text, "<WORD");
+  return out;
 }
 
 }  // namespace
@@ -232,4 +308,87 @@ TEST(DjVuImageTest, LegalTypeChecksAndXmlMapPaths)
   EXPECT_THROW(
     image->writeXML(*xml, GURL(), DjVuImage::NOMAP | DjVuImage::NOTEXT | DjVuImage::NOMETA),
     GException);
+}
+
+TEST(DjVuImageTest, ReferenceFixtureSaveAsRoundtripPreservesImageLevelExtraction)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_bg_fgtext_hidden_links.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocument> src = DjVuDocument::create_wait(fixture_url);
+  ASSERT_TRUE(src != 0);
+  ASSERT_TRUE(src->is_init_complete());
+
+  const std::filesystem::path bundled_path =
+      std::filesystem::temp_directory_path() /
+      ("djvu_gtest_image_roundtrip_bundle_" +
+       std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+       ".djvu");
+  const GURL bundled_url = GURL::Filename::UTF8(bundled_path.string().c_str());
+  EXPECT_NO_THROW(src->save_as(bundled_url, true));
+
+  GP<DjVuDocument> bundled = DjVuDocument::create_wait(bundled_url);
+  ASSERT_TRUE(bundled != 0);
+  ASSERT_TRUE(bundled->is_init_complete());
+  GP<DjVuImage> image = bundled->get_page(0, true);
+  ASSERT_TRUE(image != 0);
+
+  GP<ByteStream> anno = image->get_anno();
+  GP<ByteStream> text = image->get_text();
+  GP<ByteStream> meta = image->get_meta();
+  EXPECT_TRUE(anno != 0);
+  EXPECT_TRUE(text != 0);
+  EXPECT_TRUE(meta == 0 || meta->size() >= 0);
+
+  GP<ByteStream> xml = ByteStream::create();
+  EXPECT_NO_THROW(image->writeXML(*xml, bundled_url));
+  const std::string xml_text = ReadAll(xml);
+  EXPECT_NE(std::string::npos, xml_text.find("HIDDENTEXT"));
+  EXPECT_NE(std::string::npos, xml_text.find("OBJECT"));
+}
+
+TEST(DjVuImageTest, ReferenceMultipageRoundtripPreservesPerPageXmlSignals)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("mp3_indirect_mixed_layers/index.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocument> src = DjVuDocument::create_wait(fixture_url);
+  ASSERT_TRUE(src != 0);
+  ASSERT_TRUE(src->is_init_complete());
+  ASSERT_EQ(3, src->get_pages_num());
+
+  std::vector<XmlSignals> source;
+  for (int i = 0; i < src->get_pages_num(); ++i)
+  {
+    GP<DjVuImage> image = src->get_page(i, true);
+    ASSERT_TRUE(image != 0);
+    source.push_back(CollectXmlSignals(image, fixture_url));
+  }
+  ASSERT_EQ(3u, source.size());
+  EXPECT_LT(source[0].area_count, source[2].area_count);
+  EXPECT_LE(source[0].word_count, source[2].word_count);
+
+  const std::filesystem::path bundled_path =
+      std::filesystem::temp_directory_path() /
+      ("djvu_gtest_image_multipage_bundle_" +
+       std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+       ".djvu");
+  const GURL bundled_url = GURL::Filename::UTF8(bundled_path.string().c_str());
+  EXPECT_NO_THROW(src->save_as(bundled_url, true));
+
+  GP<DjVuDocument> bundled = DjVuDocument::create_wait(bundled_url);
+  ASSERT_TRUE(bundled != 0);
+  ASSERT_TRUE(bundled->is_init_complete());
+  for (int i = 0; i < bundled->get_pages_num(); ++i)
+  {
+    GP<DjVuImage> image = bundled->get_page(i, true);
+    ASSERT_TRUE(image != 0);
+    EXPECT_EQ(source[static_cast<size_t>(i)], CollectXmlSignals(image, bundled_url));
+  }
 }

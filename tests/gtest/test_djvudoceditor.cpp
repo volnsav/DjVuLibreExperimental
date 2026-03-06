@@ -3,6 +3,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -137,6 +138,42 @@ void CountProgressCallbacks(float, void *data)
   int *count = static_cast<int *>(data);
   if (count)
     ++(*count);
+}
+
+std::optional<std::filesystem::path> FindReferenceFixtureFile(const char *name)
+{
+  const std::filesystem::path p1 = std::filesystem::path("tests/fixtures/reference") / name;
+  if (std::filesystem::exists(p1))
+    return p1;
+  const std::filesystem::path p2 = std::filesystem::path("fixtures/reference") / name;
+  if (std::filesystem::exists(p2))
+    return p2;
+  return std::nullopt;
+}
+
+struct EditorSignals
+{
+  std::vector<std::string> page_ids;
+  std::vector<bool> has_text;
+  std::vector<bool> has_anno;
+};
+
+EditorSignals CollectEditorSignals(DjVuDocument *doc)
+{
+  EditorSignals signals;
+  for (int i = 0; i < doc->get_pages_num(); ++i)
+  {
+    const GUTF8String id = doc->page_to_id(i);
+    GP<DjVuFile> file = doc->get_djvu_file(i, false);
+    EXPECT_TRUE(file != 0);
+    if (!file)
+      continue;
+    EXPECT_NO_THROW(file->resume_decode(true));
+    signals.page_ids.emplace_back((const char *)id);
+    signals.has_text.push_back(file->contains_text());
+    signals.has_anno.push_back(file->contains_anno());
+  }
+  return signals;
 }
 
 }  // namespace
@@ -359,4 +396,87 @@ TEST(DjVuDocEditorTest, ThumbnailAnnoAndNavApisAreReachable)
 
   EXPECT_NO_THROW(editor->remove_thumbnails());
   EXPECT_EQ(0, editor->get_thumbnails_num());
+}
+
+TEST(DjVuDocEditorTest, ReferenceBundledFixtureCanRoundtripThroughIndirectAndPreserveSignals)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("mp3_bundled_mixed_layers.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocEditor> editor = DjVuDocEditor::create_wait(fixture_url);
+  ASSERT_TRUE(editor != 0);
+  ASSERT_TRUE(editor->is_init_ok());
+  ASSERT_EQ(3, editor->get_pages_num());
+
+  const EditorSignals source = CollectEditorSignals((DjVuDocument *)editor);
+
+  const std::filesystem::path indirect_dir = MakeTempDir("ref_editor_indirect");
+  const std::filesystem::path indirect_index = indirect_dir / "index.djvu";
+  const GURL indirect_url = GURL::Filename::UTF8(indirect_index.string().c_str());
+  EXPECT_NO_THROW(editor->save_as(indirect_url, false));
+  EXPECT_TRUE(std::filesystem::exists(indirect_index));
+
+  GP<DjVuDocument> indirect = DjVuDocument::create_wait(indirect_url);
+  ASSERT_TRUE(indirect != 0);
+  ASSERT_TRUE(indirect->is_init_complete());
+  EXPECT_EQ(source.page_ids, CollectEditorSignals((DjVuDocument *)indirect).page_ids);
+  EXPECT_EQ(source.has_text, CollectEditorSignals((DjVuDocument *)indirect).has_text);
+  EXPECT_EQ(source.has_anno, CollectEditorSignals((DjVuDocument *)indirect).has_anno);
+
+  const std::filesystem::path bundled_path = MakeTempPath("ref_editor_bundle.djvu");
+  const GURL bundled_url = GURL::Filename::UTF8(bundled_path.string().c_str());
+  EXPECT_NO_THROW(editor->save_as(bundled_url, true));
+  EXPECT_TRUE(std::filesystem::exists(bundled_path));
+
+  GP<DjVuDocument> bundled = DjVuDocument::create_wait(bundled_url);
+  ASSERT_TRUE(bundled != 0);
+  ASSERT_TRUE(bundled->is_init_complete());
+  EXPECT_EQ(source.page_ids, CollectEditorSignals((DjVuDocument *)bundled).page_ids);
+  EXPECT_EQ(source.has_text, CollectEditorSignals((DjVuDocument *)bundled).has_text);
+  EXPECT_EQ(source.has_anno, CollectEditorSignals((DjVuDocument *)bundled).has_anno);
+}
+
+TEST(DjVuDocEditorTest, ReferenceIndirectFixtureRenameAndSavePreservesMappingAccess)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("mp3_indirect_mixed_layers/index.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocEditor> editor = DjVuDocEditor::create_wait(fixture_url);
+  ASSERT_TRUE(editor != 0);
+  ASSERT_TRUE(editor->is_init_ok());
+  ASSERT_EQ(3, editor->get_pages_num());
+
+  const GUTF8String old_id = editor->page_to_id(1);
+  ASSERT_TRUE(old_id.length() > 0);
+  EXPECT_NO_THROW(editor->set_page_name(1, "renamed-page-2.djvu"));
+  EXPECT_NO_THROW(editor->set_page_title(1, "Renamed Page Two"));
+
+  const GUTF8String current_id = editor->page_to_id(1);
+  EXPECT_EQ(old_id, current_id);
+  EXPECT_EQ(1, editor->id_to_page(current_id));
+  EXPECT_TRUE(editor->get_djvu_file(current_id, false) != 0);
+
+  GP<DjVmDir> dir = editor->get_djvm_dir();
+  ASSERT_TRUE(dir != 0);
+  GP<DjVmDir::File> rec = dir->page_to_file(1);
+  ASSERT_TRUE(rec != 0);
+  EXPECT_STREQ("renamed-page-2.djvu", (const char *)rec->get_save_name());
+  EXPECT_STREQ("Renamed Page Two", (const char *)rec->get_title());
+
+  const std::filesystem::path bundled_path = MakeTempPath("ref_editor_renamed_bundle.djvu");
+  const GURL bundled_url = GURL::Filename::UTF8(bundled_path.string().c_str());
+  EXPECT_NO_THROW(editor->save_as(bundled_url, true));
+
+  GP<DjVuDocument> bundled = DjVuDocument::create_wait(bundled_url);
+  ASSERT_TRUE(bundled != 0);
+  ASSERT_TRUE(bundled->is_init_complete());
+  ASSERT_EQ(3, bundled->get_pages_num());
+  EXPECT_EQ(1, bundled->id_to_page(bundled->page_to_id(1)));
+  EXPECT_TRUE(bundled->get_djvu_file(bundled->page_to_id(1), false) != 0);
 }

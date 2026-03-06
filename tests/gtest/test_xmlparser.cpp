@@ -2,12 +2,15 @@
 
 #include <chrono>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 #include "ByteStream.h"
 #include "DjVuDocument.h"
 #include "DjVuFile.h"
 #include "DjVuInfo.h"
+#include "DjVuImage.h"
+#include "DjVuText.h"
 #include "IFFByteStream.h"
 #include "GURL.h"
 #include "XMLParser.h"
@@ -66,6 +69,28 @@ GP<ByteStream> OcrStub(void *, const GUTF8String &, const GP<DjVuImage> &)
   bs->write(kText, sizeof(kText) - 1);
   bs->seek(0, SEEK_SET);
   return bs;
+}
+
+std::optional<std::filesystem::path> FindReferenceFixtureFile(const char *name)
+{
+  const std::filesystem::path p1 = std::filesystem::path("tests/fixtures/reference") / name;
+  if (std::filesystem::exists(p1))
+    return p1;
+  const std::filesystem::path p2 = std::filesystem::path("fixtures/reference") / name;
+  if (std::filesystem::exists(p2))
+    return p2;
+  return std::nullopt;
+}
+
+std::string ReadAll(const GP<ByteStream> &bs)
+{
+  GP<ByteStream> in = bs;
+  in->seek(0, SEEK_SET);
+  std::string out;
+  char chunk[512];
+  while (const size_t got = in->read(chunk, sizeof(chunk)))
+    out.append(chunk, got);
+  return out;
 }
 
 }  // namespace
@@ -223,4 +248,163 @@ TEST(XMLParserTest, OcrCallbackCanInjectHiddenText)
 
   std::error_code ec;
   std::filesystem::remove(path, ec);
+}
+
+TEST(XMLParserTest, ReferenceOcrFixtureXmlRoundtripCanBeParsedAndSaved)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_utf8_multilang_hidden.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const std::filesystem::path temp_path = MakeTempXmlParserPath("ref_ocr_roundtrip");
+  std::filesystem::copy_file(*fixture, temp_path, std::filesystem::copy_options::overwrite_existing);
+  const GURL temp_url = GURL::Filename::UTF8(temp_path.string().c_str());
+
+  GP<DjVuDocument> src = DjVuDocument::create_wait(temp_url);
+  ASSERT_TRUE(src != 0);
+  ASSERT_TRUE(src->is_init_complete());
+  GP<DjVuImage> page = src->get_page(0, true);
+  ASSERT_TRUE(page != 0);
+  GP<DjVuFile> file = page->get_djvu_file();
+  ASSERT_TRUE(file != 0);
+  EXPECT_NO_THROW(file->resume_decode(true));
+  ASSERT_TRUE(file->contains_text());
+
+  GP<DjVuText> hidden = DjVuText::create();
+  ASSERT_TRUE(hidden != 0);
+  GP<ByteStream> text_bs = file->get_text();
+  ASSERT_TRUE(text_bs != 0);
+  EXPECT_NO_THROW(hidden->decode(text_bs));
+  ASSERT_TRUE(hidden->txt != 0);
+
+  const GUTF8String hidden_xml = hidden->get_xmlText(page->get_height());
+  const std::string xml =
+      "<DjVuXML><BODY><OBJECT data=\"" + std::string(temp_url.get_string()) +
+      "\" type=\"image/x.djvu\">" + std::string((const char *)hidden_xml) +
+      "</OBJECT></BODY></DjVuXML>";
+
+  GP<lt_XMLParser> parser = lt_XMLParser::create();
+  ASSERT_TRUE(parser != 0);
+  EXPECT_NO_THROW(parser->parse(MakeXmlStream(xml), nullptr));
+  EXPECT_NO_THROW(parser->save());
+
+  GP<DjVuDocument> reopened = DjVuDocument::create_wait(temp_url);
+  ASSERT_TRUE(reopened != 0);
+  ASSERT_TRUE(reopened->is_init_complete());
+  GP<DjVuFile> reopened_file = reopened->get_djvu_file(reopened->page_to_id(0), false);
+  ASSERT_TRUE(reopened_file != 0);
+  EXPECT_NO_THROW(reopened_file->resume_decode(true));
+  EXPECT_TRUE(reopened_file->contains_text());
+
+  std::error_code ec;
+  std::filesystem::remove(temp_path, ec);
+}
+
+TEST(XMLParserTest, ReferenceFixtureWriteXmlRoundtripPreservesMapAndHiddenText)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_bg_fgtext_hidden_links.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const std::filesystem::path temp_path = MakeTempXmlParserPath("ref_map_text_roundtrip");
+  std::filesystem::copy_file(*fixture, temp_path, std::filesystem::copy_options::overwrite_existing);
+  const GURL temp_url = GURL::Filename::UTF8(temp_path.string().c_str());
+
+  GP<DjVuDocument> src = DjVuDocument::create_wait(temp_url);
+  ASSERT_TRUE(src != 0);
+  ASSERT_TRUE(src->is_init_complete());
+  GP<DjVuImage> page = src->get_page(0, true);
+  ASSERT_TRUE(page != 0);
+
+  GP<ByteStream> xml_bs = ByteStream::create();
+  EXPECT_NO_THROW(page->writeXML(*xml_bs, temp_url));
+  const std::string xml =
+      "<DjVuXML><BODY>" + ReadAll(xml_bs) + "</BODY></DjVuXML>";
+
+  GP<lt_XMLParser> parser = lt_XMLParser::create();
+  ASSERT_TRUE(parser != 0);
+  EXPECT_NO_THROW(parser->parse(MakeXmlStream(xml), nullptr));
+  EXPECT_NO_THROW(parser->save());
+
+  GP<DjVuDocument> reopened = DjVuDocument::create_wait(temp_url);
+  ASSERT_TRUE(reopened != 0);
+  ASSERT_TRUE(reopened->is_init_complete());
+  GP<DjVuFile> file = reopened->get_djvu_file(reopened->page_to_id(0), false);
+  ASSERT_TRUE(file != 0);
+  EXPECT_NO_THROW(file->resume_decode(true));
+  EXPECT_TRUE(file->contains_anno());
+  EXPECT_TRUE(file->contains_text());
+
+  GP<DjVuImage> reopened_page = reopened->get_page(0, true);
+  ASSERT_TRUE(reopened_page != 0);
+  GP<ByteStream> reopened_xml = ByteStream::create();
+  EXPECT_NO_THROW(reopened_page->writeXML(*reopened_xml, temp_url));
+  const std::string reopened_text = ReadAll(reopened_xml);
+  EXPECT_NE(std::string::npos, reopened_text.find("<MAP"));
+  EXPECT_NE(std::string::npos, reopened_text.find("HIDDENTEXT"));
+
+  std::error_code ec;
+  std::filesystem::remove(temp_path, ec);
+}
+
+TEST(XMLParserTest, ReferenceFixtureMetadataInjectionPersistsAfterSave)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_hidden_only_no_visible.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const std::filesystem::path temp_path = MakeTempXmlParserPath("ref_meta_inject");
+  std::filesystem::copy_file(*fixture, temp_path, std::filesystem::copy_options::overwrite_existing);
+  const GURL temp_url = GURL::Filename::UTF8(temp_path.string().c_str());
+
+  GP<DjVuDocument> src = DjVuDocument::create_wait(temp_url);
+  ASSERT_TRUE(src != 0);
+  ASSERT_TRUE(src->is_init_complete());
+  GP<DjVuFile> file = src->get_djvu_file(src->page_to_id(0), false);
+  ASSERT_TRUE(file != 0);
+  EXPECT_NO_THROW(file->resume_decode(true));
+  ASSERT_TRUE(file->contains_text());
+
+  GP<DjVuText> hidden = DjVuText::create();
+  ASSERT_TRUE(hidden != 0);
+  GP<ByteStream> text_bs = file->get_text();
+  ASSERT_TRUE(text_bs != 0);
+  EXPECT_NO_THROW(hidden->decode(text_bs));
+  ASSERT_TRUE(hidden->txt != 0);
+
+  GP<DjVuImage> page = src->get_page(0, true);
+  ASSERT_TRUE(page != 0);
+  const GUTF8String hidden_xml = hidden->get_xmlText(page->get_height());
+  const std::string xml =
+      "<DjVuXML><BODY><OBJECT data=\"" + std::string(temp_url.get_string()) +
+      "\" type=\"image/x.djvu\">" + std::string((const char *)hidden_xml) +
+      "<METADATA><meta name=\"fixture\" value=\"reference\"/>"
+      "<meta name=\"kind\" value=\"hidden-only\"/></METADATA>"
+      "</OBJECT></BODY></DjVuXML>";
+
+  GP<lt_XMLParser> parser = lt_XMLParser::create();
+  ASSERT_TRUE(parser != 0);
+  EXPECT_NO_THROW(parser->parse(MakeXmlStream(xml), nullptr));
+  EXPECT_NO_THROW(parser->save());
+
+  GP<DjVuDocument> reopened = DjVuDocument::create_wait(temp_url);
+  ASSERT_TRUE(reopened != 0);
+  ASSERT_TRUE(reopened->is_init_complete());
+  GP<DjVuFile> reopened_file = reopened->get_djvu_file(reopened->page_to_id(0), false);
+  ASSERT_TRUE(reopened_file != 0);
+  EXPECT_NO_THROW(reopened_file->resume_decode(true));
+  EXPECT_TRUE(reopened_file->contains_text());
+  EXPECT_TRUE(reopened_file->contains_meta());
+
+  GP<DjVuImage> reopened_page = reopened->get_page(0, true);
+  ASSERT_TRUE(reopened_page != 0);
+  GP<ByteStream> reopened_xml = ByteStream::create();
+  EXPECT_NO_THROW(reopened_page->writeXML(*reopened_xml, temp_url));
+  EXPECT_NE(std::string::npos, ReadAll(reopened_xml).find("<METADATA"));
+
+  std::error_code ec;
+  std::filesystem::remove(temp_path, ec);
 }

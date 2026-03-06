@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <optional>
 #include <string>
 
 #include "ByteStream.h"
@@ -54,6 +56,24 @@ GP<ByteStream> MakeFourPageBundledDjvu()
 {
   GP<DjVmDoc> doc = DjVmDoc::create();
   for (int i = 0; i < 4; ++i)
+  {
+    const int w = 80 + i * 20;
+    const int h = 60 + i * 15;
+    GP<ByteStream> page = MakeSinglePageDjvu(w, h);
+    const GUTF8String id = GUTF8String("p") + GUTF8String(i + 1) + ".djvu";
+    const GUTF8String title = GUTF8String("Page ") + GUTF8String(i + 1);
+    doc->insert_file(*page, DjVmDir::File::PAGE, id, id, title);
+  }
+  GP<ByteStream> out = ByteStream::create();
+  doc->write(out);
+  out->seek(0, SEEK_SET);
+  return out;
+}
+
+GP<ByteStream> MakeBundledDjvuWithPageCount(int count)
+{
+  GP<DjVmDoc> doc = DjVmDoc::create();
+  for (int i = 0; i < count; ++i)
   {
     const int w = 80 + i * 20;
     const int h = 60 + i * 15;
@@ -146,6 +166,17 @@ GP<DjVuImage> MakeSyntheticCompoundImage()
   return DjVuImage::create(file);
 }
 
+GP<DjVuImage> MakeSyntheticForegroundOnlyImage(bool with_palette)
+{
+  GP<DjVuImage> image = MakeSyntheticCompoundImage();
+  GP<DjVuFile> file = image->get_djvu_file();
+  file->bgpm = 0;
+  file->fgpm = 0;
+  if (!with_palette)
+    file->fgbc = 0;
+  return image;
+}
+
 std::string ReadAll(GP<ByteStream> bs)
 {
   bs->seek(0, SEEK_SET);
@@ -159,6 +190,18 @@ std::string ReadAll(GP<ByteStream> bs)
     out.append(chunk, got);
   }
   return out;
+}
+
+int CountSubstring(const std::string &haystack, const std::string &needle)
+{
+  int count = 0;
+  size_t pos = 0;
+  while ((pos = haystack.find(needle, pos)) != std::string::npos)
+  {
+    ++count;
+    pos += needle.size();
+  }
+  return count;
 }
 
 struct PrintCounters
@@ -191,6 +234,17 @@ void InfoCb(int, int, int, DjVuToPS::Stage, void *data)
 {
   PrintCounters *c = static_cast<PrintCounters *>(data);
   ++c->info;
+}
+
+std::optional<std::filesystem::path> FindReferenceFixtureFile(const char *name)
+{
+  const std::filesystem::path p1 = std::filesystem::path("tests/fixtures/reference") / name;
+  if (std::filesystem::exists(p1))
+    return p1;
+  const std::filesystem::path p2 = std::filesystem::path("fixtures/reference") / name;
+  if (std::filesystem::exists(p2))
+    return p2;
+  return std::nullopt;
 }
 
 }  // namespace
@@ -241,6 +295,28 @@ TEST(DjVuToPSPrintTest, PrintDocumentSinglePageRangeProducesOutput)
   EXPECT_NE(std::string::npos, ps.find("%%Page: 1 1"));
 }
 
+TEST(DjVuToPSPrintTest, PrintDocumentDefaultRangeCoversAllPages)
+{
+  GP<DjVuDocument> doc = DjVuDocument::create(MakeTwoPageBundledDjvu());
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->wait_for_complete_init());
+  ASSERT_EQ(2, doc->get_pages_num());
+
+  DjVuToPS printer;
+  printer.options.set_level(2);
+  printer.options.set_color(false);
+
+  GP<ByteStream> out = ByteStream::create();
+  printer.print(*out, doc);
+
+  const std::string ps = ReadAll(out);
+  EXPECT_NE(std::string::npos, ps.find("%%Pages: 2"));
+  EXPECT_EQ(2, CountSubstring(ps, "%%Page: "));
+  EXPECT_NE(std::string::npos, ps.find("%%Page: 1 1"));
+  EXPECT_NE(std::string::npos, ps.find("%%Page: 2 2"));
+  EXPECT_NE(std::string::npos, ps.find("%%Trailer"));
+}
+
 TEST(DjVuToPSPrintTest, PrintDocumentBadRangeThrows)
 {
   GP<DjVuDocument> doc = DjVuDocument::create(MakeSinglePageDjvu());
@@ -251,6 +327,19 @@ TEST(DjVuToPSPrintTest, PrintDocumentBadRangeThrows)
   GP<ByteStream> out = ByteStream::create();
 
   EXPECT_THROW(printer.print(*out, doc, "bad-range"), GException);
+}
+
+TEST(DjVuToPSPrintTest, PrintEpsRejectsMultiPageRange)
+{
+  GP<DjVuDocument> doc = DjVuDocument::create(MakeTwoPageBundledDjvu());
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->wait_for_complete_init());
+
+  DjVuToPS printer;
+  printer.options.set_format(DjVuToPS::Options::EPS);
+  GP<ByteStream> out = ByteStream::create();
+
+  EXPECT_THROW(printer.print(*out, doc, "1-2"), GException);
 }
 
 TEST(DjVuToPSPrintTest, PrintDocumentTwoPagesWithCallbacksAndRange)
@@ -351,6 +440,34 @@ TEST(DjVuToPSPrintTest, PrintSingleImageLevel1ColorRequirementsPath)
   EXPECT_NE(std::string::npos, ps.find("numcopies(2)"));
 }
 
+TEST(DjVuToPSPrintTest, Level2PsSetupWithCopiesBookletAndSrgbEmitsDeviceFeatures)
+{
+  GP<DjVuDocument> doc = DjVuDocument::create(MakeFourPageBundledDjvu());
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->wait_for_complete_init());
+
+  DjVuToPS printer;
+  printer.options.set_format(DjVuToPS::Options::PS);
+  printer.options.set_level(2);
+  printer.options.set_mode(DjVuToPS::Options::COLOR);
+  printer.options.set_color(true);
+  printer.options.set_sRGB(true);
+  printer.options.set_copies(3);
+  printer.options.set_bookletmode(DjVuToPS::Options::RECTOVERSO);
+  printer.options.set_bookletmax(4);
+
+  GP<ByteStream> out = ByteStream::create();
+  printer.print(*out, doc, "1-4");
+
+  const std::string ps = ReadAll(out);
+  EXPECT_NE(std::string::npos,
+            ps.find("%%Requirements: color numcopies(3) collate duplex(tumble)"));
+  EXPECT_NE(std::string::npos, ps.find("%%BeginFeature: NumCopies 3"));
+  EXPECT_NE(std::string::npos, ps.find("%%BeginFeature: Collate"));
+  EXPECT_NE(std::string::npos, ps.find("%%BeginFeature: Duplex DuplexTumble"));
+  EXPECT_NE(std::string::npos, ps.find("/DjVuColorSpace [ /CIEBasedABC"));
+}
+
 TEST(DjVuToPSPrintTest, PrintBookletRectoVersoWithDollarRangeAndCropmarks)
 {
   GP<DjVuDocument> doc = DjVuDocument::create(MakeFourPageBundledDjvu());
@@ -374,6 +491,35 @@ TEST(DjVuToPSPrintTest, PrintBookletRectoVersoWithDollarRangeAndCropmarks)
   EXPECT_NE(std::string::npos, ps.find("fold-dict"));
 }
 
+TEST(DjVuToPSPrintTest, PrintSingleImageWithOverrideDpiFrameAndLandscapeZoomUsesExplicitSetup)
+{
+  GP<DjVuImage> image = MakeSyntheticCompoundImage();
+  ASSERT_TRUE(image != 0);
+
+  DjVuToPS printer;
+  printer.options.set_level(1);
+  printer.options.set_color(true);
+  printer.options.set_mode(DjVuToPS::Options::COLOR);
+  printer.options.set_orientation(DjVuToPS::Options::LANDSCAPE);
+  printer.options.set_zoom(150);
+  printer.options.set_frame(true);
+  printer.options.set_cropmarks(false);
+
+  const GRect img_rect(4, 6, 32, 24);
+  const GRect prn_rect(12, 12, 10, 8);
+
+  GP<ByteStream> out = ByteStream::create();
+  printer.print(*out, image, prn_rect, img_rect, 144);
+
+  const std::string ps = ReadAll(out);
+  EXPECT_NE(std::string::npos, ps.find("%%Orientation: Landscape"));
+  EXPECT_NE(std::string::npos, ps.find("/portrait false def"));
+  EXPECT_NE(std::string::npos, ps.find("/fit-page false def"));
+  EXPECT_NE(std::string::npos, ps.find("/zoom 150 def"));
+  EXPECT_NE(std::string::npos, ps.find("/image-dpi 144 def"));
+  EXPECT_NE(std::string::npos, ps.find("/margin 6 def"));
+}
+
 TEST(DjVuToPSPrintTest, PrintBookletRectoAndVersoModesWork)
 {
   GP<DjVuDocument> doc = DjVuDocument::create(MakeFourPageBundledDjvu());
@@ -393,4 +539,323 @@ TEST(DjVuToPSPrintTest, PrintBookletRectoAndVersoModesWork)
   verso.print(*verso_out, doc, "1-4");
   const std::string verso_ps = ReadAll(verso_out);
   EXPECT_NE(std::string::npos, verso_ps.find("%%Pages: 1"));
+}
+
+TEST(DjVuToPSPrintTest, PrintDescendingAndRepeatedRangesStayDeterministic)
+{
+  GP<DjVuDocument> doc = DjVuDocument::create(MakeFourPageBundledDjvu());
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->wait_for_complete_init());
+
+  DjVuToPS printer;
+  GP<ByteStream> out = ByteStream::create();
+  printer.print(*out, doc, "4-2,$");
+
+  const std::string ps = ReadAll(out);
+  EXPECT_NE(std::string::npos, ps.find("%%Pages: 4"));
+  EXPECT_NE(std::string::npos, ps.find("%%Page: 4 1"));
+  EXPECT_NE(std::string::npos, ps.find("%%Page: 3 2"));
+  EXPECT_NE(std::string::npos, ps.find("%%Page: 2 3"));
+  EXPECT_NE(std::string::npos, ps.find("%%Page: 4 4"));
+}
+
+TEST(DjVuToPSPrintTest, BookletModePadsFivePagesIntoFourPrintedSides)
+{
+  GP<DjVuDocument> doc = DjVuDocument::create(MakeBundledDjvuWithPageCount(5));
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->wait_for_complete_init());
+  ASSERT_EQ(5, doc->get_pages_num());
+
+  DjVuToPS printer;
+  printer.options.set_bookletmode(DjVuToPS::Options::RECTOVERSO);
+  printer.options.set_bookletmax(8);
+  printer.options.set_bookletfold(20, 150);
+
+  GP<ByteStream> out = ByteStream::create();
+  printer.print(*out, doc, "1-5");
+
+  const std::string ps = ReadAll(out);
+  EXPECT_NE(std::string::npos, ps.find("%%Pages: 4"));
+  EXPECT_NE(std::string::npos, ps.find("%%Page: ("));
+  EXPECT_NE(std::string::npos, ps.find("showpage"));
+}
+
+TEST(DjVuToPSPrintTest, PrintRejectsNullImagesAndEmptyInputRectangles)
+{
+  DjVuToPS printer;
+  GP<ByteStream> out = ByteStream::create();
+  const GRect rect(0, 0, 10, 10);
+  const GRect empty;
+
+  GP<DjVuImage> null_image;
+  EXPECT_THROW(printer.print(*out, null_image, rect, rect), GException);
+
+  GP<DjVuImage> image = MakeSyntheticCompoundImage();
+  ASSERT_TRUE(image != 0);
+  EXPECT_THROW(printer.print(*out, image, empty, rect), GException);
+  EXPECT_THROW(printer.print(*out, image, rect, empty), GException);
+}
+
+TEST(DjVuToPSPrintTest, PrintReferenceFixtureWithTextLayerEmitsHiddenText)
+{
+  const std::optional<std::filesystem::path> fixture =
+    FindReferenceFixtureFile("mp3_bundled_mixed_layers.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocument> doc = DjVuDocument::create_wait(fixture_url);
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->is_init_complete());
+  ASSERT_EQ(3, doc->get_pages_num());
+  GP<DjVuFile> file = doc->get_djvu_file(2, false);
+  ASSERT_TRUE(file != 0);
+  EXPECT_TRUE(file->contains_text());
+
+  DjVuToPS printer;
+  printer.options.set_text(true);
+  printer.options.set_color(true);
+  printer.options.set_mode(DjVuToPS::Options::COLOR);
+
+  GP<ByteStream> out = ByteStream::create();
+  EXPECT_NO_THROW(printer.print(*out, doc, "3"));
+
+  const std::string ps = ReadAll(out);
+  EXPECT_NE(std::string::npos, ps.find("%!PS-Adobe-3.0"));
+  EXPECT_NE(std::string::npos, ps.find("%%Pages: 1"));
+  EXPECT_NE(std::string::npos, ps.find("showpage"));
+}
+
+TEST(DjVuToPSPrintTest, PrintReferenceIndirectSubsetInBookletModeProducesStructuredOutput)
+{
+  const std::optional<std::filesystem::path> fixture =
+    FindReferenceFixtureFile("mp3_indirect_mixed_layers/index.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocument> doc = DjVuDocument::create_wait(fixture_url);
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->is_init_complete());
+  ASSERT_EQ(3, doc->get_pages_num());
+
+  DjVuToPS printer;
+  printer.options.set_text(true);
+  printer.options.set_bookletmode(DjVuToPS::Options::RECTOVERSO);
+  printer.options.set_bookletmax(4);
+  printer.options.set_bookletfold(16, 300);
+  printer.options.set_cropmarks(true);
+  printer.options.set_mode(DjVuToPS::Options::COLOR);
+  printer.options.set_color(true);
+
+  GP<ByteStream> out = ByteStream::create();
+  EXPECT_NO_THROW(printer.print(*out, doc, "2-3"));
+
+  const std::string ps = ReadAll(out);
+  EXPECT_NE(std::string::npos, ps.find("%!PS-Adobe-3.0"));
+  EXPECT_NE(std::string::npos, ps.find("duplex(tumble)"));
+  EXPECT_NE(std::string::npos, ps.find("fold-dict"));
+  EXPECT_NE(std::string::npos, ps.find("%%Page: ("));
+}
+
+TEST(DjVuToPSPrintTest, PrintReferenceSinglePageFixtureAsEpsProducesBoundingBox)
+{
+  const std::optional<std::filesystem::path> fixture =
+    FindReferenceFixtureFile("sp_bg_fgtext_hidden_links.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocument> doc = DjVuDocument::create_wait(fixture_url);
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->is_init_complete());
+  ASSERT_EQ(1, doc->get_pages_num());
+
+  DjVuToPS printer;
+  printer.options.set_format(DjVuToPS::Options::EPS);
+  printer.options.set_text(true);
+  printer.options.set_level(2);
+  printer.options.set_mode(DjVuToPS::Options::COLOR);
+
+  GP<ByteStream> out = ByteStream::create();
+  EXPECT_NO_THROW(printer.print(*out, doc, "1"));
+
+  const std::string ps = ReadAll(out);
+  EXPECT_NE(std::string::npos, ps.find("%!PS-Adobe-3.0"));
+  EXPECT_NE(std::string::npos, ps.find("%%BoundingBox:"));
+  EXPECT_NE(std::string::npos, ps.find("%%Page: 1 1"));
+}
+
+TEST(DjVuToPSPrintTest, PrintReferenceBackgroundOnlyFixtureInBackModeUsesOnlyBackgroundLayer)
+{
+  const std::optional<std::filesystem::path> fixture = FindReferenceFixtureFile("sp_bg_only.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  GP<DjVuDocument> doc =
+      DjVuDocument::create_wait(GURL::Filename::UTF8(fixture->string().c_str()));
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->is_init_complete());
+  ASSERT_EQ(1, doc->get_pages_num());
+
+  DjVuToPS printer;
+  printer.options.set_level(3);
+  printer.options.set_mode(DjVuToPS::Options::BACK);
+  printer.options.set_color(true);
+
+  GP<ByteStream> out = ByteStream::create();
+  EXPECT_NO_THROW(printer.print(*out, doc, "1"));
+
+  const std::string ps = ReadAll(out);
+  EXPECT_NE(std::string::npos, ps.find("%!PS-Adobe-3.0"));
+  EXPECT_NE(std::string::npos, ps.find("%%Pages: 1"));
+  EXPECT_EQ(std::string::npos, ps.find("/LocalDjVuFont"));
+  EXPECT_EQ(std::string::npos, ps.find("%% -- now doing hidden text"));
+}
+
+TEST(DjVuToPSPrintTest, PrintReferenceMaskFixtureInForeModeUsesRgbForegroundOnly)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_bw_mask_heavy.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  GP<DjVuDocument> doc =
+      DjVuDocument::create_wait(GURL::Filename::UTF8(fixture->string().c_str()));
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->is_init_complete());
+  ASSERT_EQ(1, doc->get_pages_num());
+
+  DjVuToPS printer;
+  printer.options.set_level(3);
+  printer.options.set_mode(DjVuToPS::Options::FORE);
+  printer.options.set_color(true);
+
+  GP<ByteStream> out = ByteStream::create();
+  EXPECT_NO_THROW(printer.print(*out, doc, "1"));
+
+  const std::string ps = ReadAll(out);
+  EXPECT_NE(std::string::npos, ps.find("%!PS-Adobe-3.0"));
+  EXPECT_EQ(std::string::npos, ps.find("%% --- now doing the background"));
+  EXPECT_NE(std::string::npos, ps.find("/LocalDjVuFont"));
+  EXPECT_NE(std::string::npos, ps.find("/DjVuColorSpace [ /CIEBasedABC"));
+}
+
+TEST(DjVuToPSPrintTest, PrintReferenceMaskFixtureInBwModeUsesGrayForegroundOnly)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_bw_mask_heavy.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  GP<DjVuDocument> doc =
+      DjVuDocument::create_wait(GURL::Filename::UTF8(fixture->string().c_str()));
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->is_init_complete());
+  ASSERT_EQ(1, doc->get_pages_num());
+
+  DjVuToPS printer;
+  printer.options.set_level(3);
+  printer.options.set_mode(DjVuToPS::Options::BW);
+  printer.options.set_color(false);
+
+  GP<ByteStream> out = ByteStream::create();
+  EXPECT_NO_THROW(printer.print(*out, doc, "1"));
+
+  const std::string ps = ReadAll(out);
+  EXPECT_NE(std::string::npos, ps.find("%!PS-Adobe-3.0"));
+  EXPECT_EQ(std::string::npos, ps.find("%% --- now doing the background"));
+  EXPECT_NE(std::string::npos, ps.find("/LocalDjVuFont"));
+  EXPECT_NE(std::string::npos, ps.find("/DjVuColorSpace [ /CIEBasedA"));
+}
+
+TEST(DjVuToPSPrintTest, PrintReferenceFixtureInForeModeKeepsHiddenTextWithoutBackground)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_bg_fgtext_hidden.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  GP<DjVuDocument> doc =
+      DjVuDocument::create_wait(GURL::Filename::UTF8(fixture->string().c_str()));
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->is_init_complete());
+  ASSERT_EQ(1, doc->get_pages_num());
+
+  DjVuToPS printer;
+  printer.options.set_level(3);
+  printer.options.set_mode(DjVuToPS::Options::FORE);
+  printer.options.set_color(true);
+  printer.options.set_text(true);
+
+  GP<ByteStream> out = ByteStream::create();
+  EXPECT_NO_THROW(printer.print(*out, doc, "1"));
+
+  const std::string ps = ReadAll(out);
+  EXPECT_EQ(std::string::npos, ps.find("%% --- now doing the background"));
+  EXPECT_NE(std::string::npos, ps.find("/LocalDjVuFont"));
+  EXPECT_NE(std::string::npos, ps.find("%% -- now doing hidden text"));
+}
+
+TEST(DjVuToPSPrintTest, Level2ColorCompoundPrintUsesLeveledCompositePath)
+{
+  DjVuToPS level2_color;
+  level2_color.options.set_level(2);
+  level2_color.options.set_mode(DjVuToPS::Options::COLOR);
+  level2_color.options.set_color(true);
+  GP<DjVuImage> compound = MakeSyntheticCompoundImage();
+  ASSERT_TRUE(compound != 0);
+  const GRect rect(0, 0, compound->get_width(), compound->get_height());
+  GP<ByteStream> out_l2_color = ByteStream::create();
+  level2_color.print(*out_l2_color, compound, rect, rect);
+  const std::string ps_l2_color = ReadAll(out_l2_color);
+  EXPECT_EQ(std::string::npos, ps_l2_color.find("%% --- now doing the background"));
+  EXPECT_EQ(std::string::npos, ps_l2_color.find("%% --- now doing the foreground"));
+}
+
+TEST(DjVuToPSPrintTest, Level2BwCompoundPrintUsesForegroundOnlyPath)
+{
+  DjVuToPS level2_bw;
+  level2_bw.options.set_level(2);
+  level2_bw.options.set_mode(DjVuToPS::Options::BW);
+  level2_bw.options.set_color(false);
+  GP<DjVuImage> compound = MakeSyntheticCompoundImage();
+  ASSERT_TRUE(compound != 0);
+  const GRect rect(0, 0, compound->get_width(), compound->get_height());
+  GP<ByteStream> out_l2_bw = ByteStream::create();
+  level2_bw.print(*out_l2_bw, compound, rect, rect);
+  const std::string ps_l2_bw = ReadAll(out_l2_bw);
+  EXPECT_NE(std::string::npos, ps_l2_bw.find("%!PS-Adobe-3.0"));
+  EXPECT_NE(std::string::npos, ps_l2_bw.find("%%Pages: 1"));
+}
+
+TEST(DjVuToPSPrintTest, PrintForegroundOnlyImageExercisesTwoLayerGlyphPaths)
+{
+  const GRect rect(0, 0, 64, 48);
+
+  GP<DjVuImage> palette_image = MakeSyntheticForegroundOnlyImage(true);
+  ASSERT_TRUE(palette_image != 0);
+  DjVuToPS palette_printer;
+  palette_printer.options.set_level(3);
+  palette_printer.options.set_mode(DjVuToPS::Options::FORE);
+  palette_printer.options.set_color(true);
+  GP<ByteStream> palette_out = ByteStream::create();
+  palette_printer.print(*palette_out, palette_image, rect, rect);
+  const std::string palette_ps = ReadAll(palette_out);
+  EXPECT_NE(std::string::npos, palette_ps.find("/LocalDjVuFont"));
+  EXPECT_EQ(std::string::npos, palette_ps.find("/P {"));
+  EXPECT_NE(std::string::npos, palette_ps.find(" c\n"));
+
+  GP<DjVuImage> bw_image = MakeSyntheticForegroundOnlyImage(false);
+  ASSERT_TRUE(bw_image != 0);
+  DjVuToPS bw_printer;
+  bw_printer.options.set_level(3);
+  bw_printer.options.set_mode(DjVuToPS::Options::FORE);
+  bw_printer.options.set_color(true);
+  GP<ByteStream> bw_out = ByteStream::create();
+  bw_printer.print(*bw_out, bw_image, rect, rect);
+  const std::string bw_ps = ReadAll(bw_out);
+  EXPECT_NE(std::string::npos, bw_ps.find("/LocalDjVuFont"));
+  EXPECT_EQ(std::string::npos, bw_ps.find("/P {"));
+  EXPECT_NE(std::string::npos, bw_ps.find(" s\n"));
 }

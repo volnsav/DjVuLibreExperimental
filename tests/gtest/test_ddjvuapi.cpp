@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <optional>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -305,6 +306,97 @@ ddjvu_page_t *WaitCreatePage0(ddjvu_context_t *ctx, ddjvu_document_t *doc)
   return nullptr;
 }
 
+std::optional<std::filesystem::path> FindReferenceFixtureFile(const char *name)
+{
+  const std::filesystem::path p1 = std::filesystem::path("tests/fixtures/reference") / name;
+  if (std::filesystem::exists(p1))
+    return p1;
+  const std::filesystem::path p2 = std::filesystem::path("fixtures/reference") / name;
+  if (std::filesystem::exists(p2))
+    return p2;
+  return std::nullopt;
+}
+
+bool MiniexpContainsNonAsciiString(miniexp_t p)
+{
+  if (miniexp_stringp(p))
+  {
+    const char *s = miniexp_to_str(p);
+    for (; s && *s; ++s)
+      if (static_cast<unsigned char>(*s) & 0x80)
+        return true;
+    return false;
+  }
+  if (miniexp_consp(p))
+  {
+    for (; miniexp_consp(p); p = miniexp_cdr(p))
+      if (MiniexpContainsNonAsciiString(miniexp_car(p)))
+        return true;
+  }
+  return false;
+}
+
+int CountMiniexpArray(miniexp_t *values)
+{
+  int n = 0;
+  if (!values)
+    return 0;
+  while (values[n])
+    ++n;
+  return n;
+}
+
+std::filesystem::path MakeTempApiPath(const char *tag, const char *suffix)
+{
+  return std::filesystem::temp_directory_path() /
+         ("djvu_gtest_ddjvuapi_" +
+          std::string(tag) + "_" +
+          std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+          suffix);
+}
+
+void WriteBytesToPath(const std::filesystem::path &path, const std::vector<char> &data)
+{
+  FILE *f = std::fopen(path.string().c_str(), "wb");
+  ASSERT_NE(nullptr, f);
+  if (!data.empty())
+  {
+    ASSERT_EQ(data.size(), std::fwrite(data.data(), 1, data.size(), f));
+  }
+  std::fclose(f);
+}
+
+std::vector<char> ReadBytesFromPath(const std::filesystem::path &path)
+{
+  FILE *f = std::fopen(path.string().c_str(), "rb");
+  if (!f)
+    return {};
+  std::fseek(f, 0, SEEK_END);
+  const long size = std::ftell(f);
+  std::fseek(f, 0, SEEK_SET);
+  if (size <= 0)
+  {
+    std::fclose(f);
+    return {};
+  }
+
+  std::vector<char> out(static_cast<size_t>(size));
+  if (std::fread(out.data(), 1, out.size(), f) != out.size())
+    out.clear();
+  std::fclose(f);
+  return out;
+}
+
+long GetFileSize(FILE *f)
+{
+  std::fflush(f);
+  EXPECT_EQ(0, std::fseek(f, 0, SEEK_END));
+  const long sz = std::ftell(f);
+  EXPECT_GE(sz, 0);
+  EXPECT_EQ(0, std::fseek(f, 0, SEEK_SET));
+  return sz;
+}
+
 }  // namespace
 
 TEST(DdJvuApiTest, VersionAndContextLifecycle)
@@ -482,7 +574,9 @@ TEST(DdJvuApiTest, DocumentStreamDecodeAndQueryPaths)
   const ddjvu_status_t fi_status = ddjvu_document_get_fileinfo(doc, 0, &file_info);
   EXPECT_TRUE(fi_status == DDJVU_JOB_OK || fi_status == DDJVU_JOB_STARTED);
   if (fi_status == DDJVU_JOB_OK)
+  {
     EXPECT_EQ('P', file_info.type);
+  }
 
   char *page_dump = ddjvu_document_get_pagedump(doc, 0);
   ASSERT_NE(nullptr, page_dump);
@@ -867,6 +961,67 @@ TEST(DdJvuApiTest, CreateByFilenameAndUtf8Paths)
   std::filesystem::remove(path, ec);
 }
 
+TEST(DdJvuApiTest, NonDjvuFilesWithDjvuExtensionFailPredictably)
+{
+  const std::vector<std::pair<const char *, std::vector<char>>> cases = {
+      {"fake_pdf.djvu",
+       std::vector<char>{'%', 'P', 'D', 'F', '-', '1', '.', '4', '\n', '%', '%', 'E', 'O', 'F',
+                         '\n'}},
+      {"fake_png.djvu",
+       std::vector<char>{
+           static_cast<char>(0x89), 'P', 'N', 'G', '\r', '\n', static_cast<char>(0x1A), '\n',
+           0x00, 0x00, 0x00, 0x0D, 'I', 'H', 'D', 'R',
+           0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+           0x08, 0x02, 0x00, 0x00, 0x00, static_cast<char>(0x90), 'w', 'S',
+           static_cast<char>(0xDE)}},
+      {"fake_txt.djvu", std::vector<char>{'n', 'o', 't', ' ', 'a', ' ', 'd', 'j', 'v', 'u', '\n'}},
+      {"empty.djvu", std::vector<char>{}},
+  };
+
+  ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_negative_files");
+  ASSERT_NE(nullptr, ctx);
+
+  for (const auto &item : cases)
+  {
+    const std::filesystem::path path = MakeTempApiPath(item.first, "");
+    WriteBytesToPath(path, item.second);
+
+    ddjvu_document_t *doc =
+        ddjvu_document_create_by_filename_utf8(ctx, path.string().c_str(), 0);
+    ASSERT_NE(nullptr, doc);
+
+    ddjvu_job_t *job = ddjvu_document_job(doc);
+    ASSERT_NE(nullptr, job);
+    EXPECT_TRUE(WaitForJobTerminal(ctx, job));
+    EXPECT_TRUE(ddjvu_document_decoding_error(doc) ||
+                ddjvu_job_status(job) >= DDJVU_JOB_FAILED ||
+                ddjvu_document_get_pagenum(doc) == 0);
+
+    if (ddjvu_document_get_pagenum(doc) > 0)
+    {
+      ddjvu_page_t *page = ddjvu_page_create_by_pageno(doc, 0);
+      ASSERT_NE(nullptr, page);
+      const bool page_terminal = WaitForPageTerminal(ctx, page);
+      EXPECT_TRUE(page_terminal ||
+                  ddjvu_document_decoding_error(doc) ||
+                  ddjvu_page_get_width(page) <= 0 ||
+                  ddjvu_page_get_height(page) <= 0);
+      EXPECT_TRUE(ddjvu_document_decoding_error(doc) ||
+                  !page_terminal ||
+                  ddjvu_page_decoding_error(page) ||
+                  ddjvu_page_get_width(page) <= 0 ||
+                  ddjvu_page_get_height(page) <= 0);
+      ddjvu_page_release(page);
+    }
+
+    ddjvu_document_release(doc);
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+  }
+
+  ddjvu_context_release(ctx);
+}
+
 TEST(DdJvuApiTest, Bm44PageInfoAndRenderModesPaths)
 {
   ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_bm44");
@@ -895,8 +1050,10 @@ TEST(DdJvuApiTest, Bm44PageInfoAndRenderModesPaths)
       ddjvu_page_release(byid);
   }
 
-  ddjvu_rect_t prect{0, 0, info.width, info.height};
-  ddjvu_rect_t rrect{0, 0, info.width, info.height};
+  ddjvu_rect_t prect{0, 0, static_cast<unsigned int>(info.width),
+                     static_cast<unsigned int>(info.height)};
+  ddjvu_rect_t rrect{0, 0, static_cast<unsigned int>(info.width),
+                     static_cast<unsigned int>(info.height)};
   ddjvu_format_t *fmt = ddjvu_format_create(DDJVU_FORMAT_RGB24, 0, nullptr);
   ASSERT_NE(nullptr, fmt);
   std::vector<char> buf(static_cast<size_t>(info.width * info.height * 3), 0);
@@ -1591,6 +1748,670 @@ TEST(DdJvuApiTest, BitmapMaskOnlyRenderUsesAllBitmapColorConverters)
   ddjvu_format_release(palette);
 
   ddjvu_page_release(page);
+  ddjvu_document_release(doc);
+  ddjvu_context_release(ctx);
+}
+
+TEST(DdJvuApiTest, ReferenceIndirectFilenameSupportsPageIdLookupAndJobUserData)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("mp3_indirect_mixed_layers/index.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_ref_indirect");
+  ASSERT_NE(nullptr, ctx);
+
+  ddjvu_document_t *doc =
+      ddjvu_document_create_by_filename_utf8(ctx, fixture->string().c_str(), 0);
+  ASSERT_NE(nullptr, doc);
+  ddjvu_pageinfo_t info{};
+  ASSERT_TRUE(WaitForPageInfoOk(ctx, doc, &info));
+  EXPECT_EQ(DDJVU_DOCTYPE_INDIRECT, ddjvu_document_get_type(doc));
+  EXPECT_EQ(3, ddjvu_document_get_pagenum(doc));
+
+  std::string page1_id;
+  std::string page1_name;
+  const int filenum = ddjvu_document_get_filenum(doc);
+  EXPECT_GE(filenum, 3);
+  for (int i = 0; i < filenum; ++i)
+  {
+    ddjvu_fileinfo_t fi{};
+    if (ddjvu_document_get_fileinfo(doc, i, &fi) != DDJVU_JOB_OK)
+      continue;
+    if (fi.type == 'P' && fi.pageno == 1)
+    {
+      if (fi.id)
+        page1_id = fi.id;
+      if (fi.name)
+        page1_name = fi.name;
+    }
+  }
+
+  ASSERT_FALSE(page1_id.empty());
+  EXPECT_EQ(1, ddjvu_document_search_pageno(doc, page1_id.c_str()));
+  if (!page1_name.empty())
+  {
+    EXPECT_EQ(1, ddjvu_document_search_pageno(doc, page1_name.c_str()));
+  }
+  EXPECT_EQ(1, ddjvu_document_search_pageno(doc, "2"));
+
+  ddjvu_job_t *doc_job = ddjvu_document_job(doc);
+  ASSERT_NE(nullptr, doc_job);
+  ddjvu_job_set_user_data(doc_job, reinterpret_cast<void *>(0x1234));
+  EXPECT_EQ(reinterpret_cast<void *>(0x1234), ddjvu_job_get_user_data(doc_job));
+
+  ddjvu_page_t *page = ddjvu_page_create_by_pageid(doc, page1_id.c_str());
+  ASSERT_NE(nullptr, page);
+  EXPECT_TRUE(WaitForPageTerminal(ctx, page));
+  ddjvu_job_t *page_job = ddjvu_page_job(page);
+  ASSERT_NE(nullptr, page_job);
+  ddjvu_job_set_user_data(page_job, reinterpret_cast<void *>(0x5678));
+  EXPECT_EQ(reinterpret_cast<void *>(0x5678), ddjvu_job_get_user_data(page_job));
+  EXPECT_GT(ddjvu_page_get_width(page), 0);
+  EXPECT_GT(ddjvu_page_get_height(page), 0);
+
+  ddjvu_page_release(page);
+  ddjvu_document_release(doc);
+  ddjvu_context_release(ctx);
+}
+
+TEST(DdJvuApiTest, ReferenceIndirectPrintAndSaveSubsetJobsProduceOutput)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("mp3_indirect_mixed_layers/index.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_ref_jobs");
+  ASSERT_NE(nullptr, ctx);
+  ddjvu_document_t *doc =
+      ddjvu_document_create_by_filename_utf8(ctx, fixture->string().c_str(), 0);
+  ASSERT_NE(nullptr, doc);
+  ddjvu_pageinfo_t info{};
+  ASSERT_TRUE(WaitForPageInfoOk(ctx, doc, &info));
+  ASSERT_EQ(3, ddjvu_document_get_pagenum(doc));
+
+  FILE *print_out = std::tmpfile();
+  ASSERT_NE(nullptr, print_out);
+  const char *print_opts[] = {"pages=2-3", "format=ps", "mode=color", "text=yes"};
+  ddjvu_job_t *print_job =
+      ddjvu_document_print(doc, print_out, static_cast<int>(std::size(print_opts)), print_opts);
+  ASSERT_NE(nullptr, print_job);
+  EXPECT_TRUE(WaitForJobTerminal(ctx, print_job));
+  EXPECT_EQ(DDJVU_JOB_OK, ddjvu_job_status(print_job));
+  EXPECT_GT(GetFileSize(print_out), 0);
+  ddjvu_job_release(print_job);
+  std::fclose(print_out);
+
+  FILE *save_out = std::tmpfile();
+  ASSERT_NE(nullptr, save_out);
+  const char *save_opts[] = {"pages=2-3"};
+  ddjvu_job_t *save_job =
+      ddjvu_document_save(doc, save_out, static_cast<int>(std::size(save_opts)), save_opts);
+  ASSERT_NE(nullptr, save_job);
+  EXPECT_TRUE(WaitForJobTerminal(ctx, save_job));
+  EXPECT_EQ(DDJVU_JOB_OK, ddjvu_job_status(save_job));
+  EXPECT_GT(GetFileSize(save_out), 0);
+  ddjvu_job_release(save_job);
+  std::fclose(save_out);
+
+  const std::filesystem::path indirect_index = MakeTempApiPath("ref_indirect_save", ".djvu");
+  const std::string indirect_opt = std::string("indirect=") + indirect_index.string();
+  const char *indirect_opts[] = {"pages=2-3", indirect_opt.c_str()};
+  ddjvu_job_t *indirect_job = ddjvu_document_save(
+      doc, nullptr, static_cast<int>(std::size(indirect_opts)), indirect_opts);
+  ASSERT_NE(nullptr, indirect_job);
+  EXPECT_TRUE(WaitForJobTerminal(ctx, indirect_job));
+  EXPECT_EQ(DDJVU_JOB_OK, ddjvu_job_status(indirect_job));
+  ddjvu_job_release(indirect_job);
+  EXPECT_TRUE(std::filesystem::exists(indirect_index));
+
+  std::error_code ec;
+  std::filesystem::remove_all(indirect_index.parent_path() / indirect_index.stem(), ec);
+  std::filesystem::remove(indirect_index, ec);
+  ddjvu_document_release(doc);
+  ddjvu_context_release(ctx);
+}
+
+TEST(DdJvuApiTest, ReferenceBundledSharedFixtureCoversIncludeDumpAndPageSearch)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("mp2_bundled_shared_resources.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_ref_shared");
+  ASSERT_NE(nullptr, ctx);
+  ddjvu_document_t *doc =
+      ddjvu_document_create_by_filename_utf8(ctx, fixture->string().c_str(), 0);
+  ASSERT_NE(nullptr, doc);
+  ddjvu_pageinfo_t info{};
+  ASSERT_TRUE(WaitForPageInfoOk(ctx, doc, &info));
+  EXPECT_EQ(DDJVU_DOCTYPE_BUNDLED, ddjvu_document_get_type(doc));
+  EXPECT_EQ(2, ddjvu_document_get_pagenum(doc));
+
+  int include_index = -1;
+  std::string page0_id;
+  const int filenum = ddjvu_document_get_filenum(doc);
+  EXPECT_GE(filenum, 3);
+  for (int i = 0; i < filenum; ++i)
+  {
+    ddjvu_fileinfo_t fi{};
+    if (ddjvu_document_get_fileinfo(doc, i, &fi) != DDJVU_JOB_OK)
+      continue;
+    if (fi.type == 'I')
+      include_index = i;
+    if (fi.type == 'P' && fi.pageno == 0 && fi.id)
+      page0_id = fi.id;
+  }
+
+  EXPECT_GE(include_index, 0);
+  ASSERT_FALSE(page0_id.empty());
+  EXPECT_EQ(0, ddjvu_document_search_pageno(doc, page0_id.c_str()));
+  EXPECT_EQ(0, ddjvu_document_search_pageno(doc, "1"));
+
+  char *page_dump = ddjvu_document_get_pagedump(doc, 0);
+  ASSERT_NE(nullptr, page_dump);
+  std::free(page_dump);
+
+  char *file_dump = ddjvu_document_get_filedump(doc, include_index);
+  ASSERT_NE(nullptr, file_dump);
+  std::free(file_dump);
+
+  ddjvu_page_t *page = ddjvu_page_create_by_pageid(doc, page0_id.c_str());
+  ASSERT_NE(nullptr, page);
+  EXPECT_TRUE(WaitForPageTerminal(ctx, page));
+  EXPECT_GT(ddjvu_page_get_width(page), 0);
+  EXPECT_GT(ddjvu_page_get_height(page), 0);
+
+  ddjvu_page_release(page);
+  ddjvu_document_release(doc);
+  ddjvu_context_release(ctx);
+}
+
+TEST(DdJvuApiTest, ReferenceSinglePageFixtureExposesTextAndHyperlinks)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_bg_fgtext_hidden_links.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_ref_pageanno");
+  ASSERT_NE(nullptr, ctx);
+  ddjvu_document_t *doc =
+      ddjvu_document_create_by_filename_utf8(ctx, fixture->string().c_str(), 0);
+  ASSERT_NE(nullptr, doc);
+  ddjvu_pageinfo_t info{};
+  ASSERT_TRUE(WaitForPageInfoOk(ctx, doc, &info));
+  EXPECT_EQ(1, ddjvu_document_get_pagenum(doc));
+
+  miniexp_t text = ddjvu_document_get_pagetext(doc, 0, "word");
+  for (int i = 0; i < 100 && text == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    text = ddjvu_document_get_pagetext(doc, 0, "word");
+  }
+  ASSERT_NE(miniexp_dummy, text);
+  ASSERT_NE(miniexp_nil, text);
+  EXPECT_EQ(miniexp_symbol("page"), miniexp_car(text));
+  ddjvu_miniexp_release(doc, text);
+
+  miniexp_t anno = ddjvu_document_get_pageanno(doc, 0);
+  for (int i = 0; i < 100 && anno == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    anno = ddjvu_document_get_pageanno(doc, 0);
+  }
+  ASSERT_NE(miniexp_dummy, anno);
+  ASSERT_TRUE(miniexp_consp(anno));
+
+  miniexp_t *links = ddjvu_anno_get_hyperlinks(anno);
+  ASSERT_NE(nullptr, links);
+  EXPECT_GE(CountMiniexpArray(links), 2);
+  std::free(links);
+  ddjvu_miniexp_release(doc, anno);
+
+  miniexp_t shared_anno = ddjvu_document_get_anno(doc, 1);
+  EXPECT_TRUE(shared_anno == miniexp_nil || shared_anno == miniexp_dummy ||
+              !miniexp_consp(shared_anno));
+
+  ddjvu_document_release(doc);
+  ddjvu_context_release(ctx);
+}
+
+TEST(DdJvuApiTest, ReferenceSinglePageFixtureSupportsIncrementalStreamingDecodeAndQueries)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_bg_fgtext_hidden_links.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const std::vector<char> data = ReadBytesFromPath(*fixture);
+  ASSERT_FALSE(data.empty());
+
+  ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_ref_stream_page");
+  ASSERT_NE(nullptr, ctx);
+  ddjvu_document_t *doc =
+      ddjvu_document_create(ctx, "file:///virtual/streamed_ref_page.djvu", 0);
+  ASSERT_NE(nullptr, doc);
+
+  constexpr size_t kChunk = 257;
+  for (size_t offset = 0; offset < data.size(); offset += kChunk)
+  {
+    const size_t len = std::min(kChunk, data.size() - offset);
+    ddjvu_stream_write(doc, 0, data.data() + offset, static_cast<unsigned long>(len));
+    PumpMessages(ctx);
+  }
+  ddjvu_stream_close(doc, 0, 0);
+
+  ddjvu_job_t *job = ddjvu_document_job(doc);
+  ASSERT_NE(nullptr, job);
+  EXPECT_TRUE(WaitForJobTerminal(ctx, job));
+  EXPECT_EQ(DDJVU_JOB_OK, ddjvu_job_status(job));
+
+  ddjvu_pageinfo_t info{};
+  ASSERT_TRUE(WaitForPageInfoOk(ctx, doc, &info));
+  EXPECT_EQ(DDJVU_DOCTYPE_SINGLEPAGE, ddjvu_document_get_type(doc));
+  EXPECT_EQ(1, ddjvu_document_get_pagenum(doc));
+
+  miniexp_t text = ddjvu_document_get_pagetext(doc, 0, "word");
+  for (int i = 0; i < 100 && text == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    text = ddjvu_document_get_pagetext(doc, 0, "word");
+  }
+  ASSERT_NE(miniexp_dummy, text);
+  ASSERT_NE(miniexp_nil, text);
+  ddjvu_miniexp_release(doc, text);
+
+  miniexp_t anno = ddjvu_document_get_pageanno(doc, 0);
+  for (int i = 0; i < 100 && anno == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    anno = ddjvu_document_get_pageanno(doc, 0);
+  }
+  ASSERT_NE(miniexp_dummy, anno);
+  ASSERT_TRUE(miniexp_consp(anno));
+  ddjvu_miniexp_release(doc, anno);
+
+  ddjvu_document_release(doc);
+  ddjvu_context_release(ctx);
+}
+
+TEST(DdJvuApiTest, ReferenceUnicodeFixturePageTextContainsNonAscii)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_utf8_multilang_hidden.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_ref_unicode_text");
+  ASSERT_NE(nullptr, ctx);
+  ddjvu_document_t *doc =
+      ddjvu_document_create_by_filename_utf8(ctx, fixture->string().c_str(), 0);
+  ASSERT_NE(nullptr, doc);
+  ddjvu_pageinfo_t info{};
+  ASSERT_TRUE(WaitForPageInfoOk(ctx, doc, &info));
+
+  miniexp_t text = ddjvu_document_get_pagetext(doc, 0, "word");
+  for (int i = 0; i < 100 && text == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    text = ddjvu_document_get_pagetext(doc, 0, "word");
+  }
+  ASSERT_NE(miniexp_dummy, text);
+  ASSERT_NE(miniexp_nil, text);
+  EXPECT_TRUE(MiniexpContainsNonAsciiString(text));
+  ddjvu_miniexp_release(doc, text);
+
+  ddjvu_document_release(doc);
+  ddjvu_context_release(ctx);
+}
+
+TEST(DdJvuApiTest, ReferenceBundledSharedFixtureSupportsIncrementalStreamingAndFileinfo)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("mp2_bundled_shared_resources.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const std::vector<char> data = ReadBytesFromPath(*fixture);
+  ASSERT_FALSE(data.empty());
+
+  ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_ref_stream_bundle");
+  ASSERT_NE(nullptr, ctx);
+  ddjvu_document_t *doc =
+      ddjvu_document_create(ctx, "file:///virtual/streamed_ref_bundle.djvu", 0);
+  ASSERT_NE(nullptr, doc);
+
+  constexpr size_t kChunk = 521;
+  for (size_t offset = 0; offset < data.size(); offset += kChunk)
+  {
+    const size_t len = std::min(kChunk, data.size() - offset);
+    ddjvu_stream_write(doc, 0, data.data() + offset, static_cast<unsigned long>(len));
+    PumpMessages(ctx);
+  }
+  ddjvu_stream_close(doc, 0, 0);
+
+  ddjvu_job_t *job = ddjvu_document_job(doc);
+  ASSERT_NE(nullptr, job);
+  EXPECT_TRUE(WaitForJobTerminal(ctx, job));
+  EXPECT_EQ(DDJVU_JOB_OK, ddjvu_job_status(job));
+
+  ddjvu_pageinfo_t info{};
+  ASSERT_TRUE(WaitForPageInfoOk(ctx, doc, &info));
+  EXPECT_EQ(DDJVU_DOCTYPE_BUNDLED, ddjvu_document_get_type(doc));
+  EXPECT_EQ(2, ddjvu_document_get_pagenum(doc));
+
+  bool saw_page = false;
+  bool saw_include = false;
+  const int filenum = ddjvu_document_get_filenum(doc);
+  EXPECT_GE(filenum, 3);
+  for (int i = 0; i < filenum; ++i)
+  {
+    ddjvu_fileinfo_t fi{};
+    if (ddjvu_document_get_fileinfo(doc, i, &fi) != DDJVU_JOB_OK)
+      continue;
+    saw_page = saw_page || (fi.type == 'P');
+    saw_include = saw_include || (fi.type == 'I');
+  }
+  EXPECT_TRUE(saw_page);
+  EXPECT_TRUE(saw_include);
+
+  ddjvu_document_release(doc);
+  ddjvu_context_release(ctx);
+}
+
+TEST(DdJvuApiTest, NegativeNonDjvuDocumentTextAndAnnoApisReturnStatusOrEmpty)
+{
+  const std::filesystem::path path = MakeTempApiPath("negative_status_pdf", ".djvu");
+  WriteBytesToPath(
+      path, std::vector<char>{'%', 'P', 'D', 'F', '-', '1', '.', '7', '\n', '%', '%', 'E', 'O', 'F', '\n'});
+
+  ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_negative_status");
+  ASSERT_NE(nullptr, ctx);
+  ddjvu_document_t *doc =
+      ddjvu_document_create_by_filename_utf8(ctx, path.string().c_str(), 0);
+  ASSERT_NE(nullptr, doc);
+  ddjvu_job_t *job = ddjvu_document_job(doc);
+  ASSERT_NE(nullptr, job);
+  EXPECT_TRUE(WaitForJobTerminal(ctx, job));
+
+  miniexp_t outline = ddjvu_document_get_outline(doc);
+  miniexp_t text = ddjvu_document_get_pagetext(doc, 0, "word");
+  miniexp_t anno = ddjvu_document_get_pageanno(doc, 0);
+  miniexp_t doc_anno = ddjvu_document_get_anno(doc, 1);
+
+  EXPECT_NE(miniexp_dummy, outline);
+  EXPECT_NE(miniexp_dummy, text);
+  EXPECT_NE(miniexp_dummy, anno);
+  EXPECT_NE(miniexp_dummy, doc_anno);
+
+  ddjvu_document_release(doc);
+  ddjvu_context_release(ctx);
+  std::error_code ec;
+  std::filesystem::remove(path, ec);
+}
+
+TEST(DdJvuApiTest, ReferenceIndirectSavedSubsetCanBeReopenedAndQueried)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("mp3_indirect_mixed_layers/index.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_ref_subset_reopen");
+  ASSERT_NE(nullptr, ctx);
+  ddjvu_document_t *doc =
+      ddjvu_document_create_by_filename_utf8(ctx, fixture->string().c_str(), 0);
+  ASSERT_NE(nullptr, doc);
+  ddjvu_pageinfo_t info{};
+  ASSERT_TRUE(WaitForPageInfoOk(ctx, doc, &info));
+  ASSERT_EQ(3, ddjvu_document_get_pagenum(doc));
+
+  const std::filesystem::path indirect_index = MakeTempApiPath("ref_subset_reopen", ".djvu");
+  const std::string indirect_opt = std::string("indirect=") + indirect_index.string();
+  const char *save_opts[] = {"pages=2-3", indirect_opt.c_str()};
+  ddjvu_job_t *save_job =
+      ddjvu_document_save(doc, nullptr, static_cast<int>(std::size(save_opts)), save_opts);
+  ASSERT_NE(nullptr, save_job);
+  EXPECT_TRUE(WaitForJobTerminal(ctx, save_job));
+  EXPECT_EQ(DDJVU_JOB_OK, ddjvu_job_status(save_job));
+  ddjvu_job_release(save_job);
+  EXPECT_TRUE(std::filesystem::exists(indirect_index));
+
+  ddjvu_document_t *subset =
+      ddjvu_document_create_by_filename_utf8(ctx, indirect_index.string().c_str(), 0);
+  ASSERT_NE(nullptr, subset);
+  ddjvu_pageinfo_t subset_info{};
+  ASSERT_TRUE(WaitForPageInfoOk(ctx, subset, &subset_info));
+  EXPECT_EQ(2, ddjvu_document_get_pagenum(subset));
+
+  miniexp_t page0_text = ddjvu_document_get_pagetext(subset, 0, "word");
+  for (int i = 0; i < 100 && page0_text == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    page0_text = ddjvu_document_get_pagetext(subset, 0, "word");
+  }
+  EXPECT_TRUE(page0_text == miniexp_nil || miniexp_consp(page0_text));
+  if (page0_text != miniexp_dummy && page0_text != miniexp_nil)
+    ddjvu_miniexp_release(subset, page0_text);
+
+  miniexp_t page1_text = ddjvu_document_get_pagetext(subset, 1, "word");
+  for (int i = 0; i < 100 && page1_text == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    page1_text = ddjvu_document_get_pagetext(subset, 1, "word");
+  }
+  ASSERT_NE(miniexp_dummy, page1_text);
+  ASSERT_NE(miniexp_nil, page1_text);
+  ddjvu_miniexp_release(subset, page1_text);
+
+  miniexp_t page1_anno = ddjvu_document_get_pageanno(subset, 1);
+  for (int i = 0; i < 100 && page1_anno == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    page1_anno = ddjvu_document_get_pageanno(subset, 1);
+  }
+  ASSERT_NE(miniexp_dummy, page1_anno);
+  ASSERT_TRUE(miniexp_consp(page1_anno));
+  miniexp_t *links = ddjvu_anno_get_hyperlinks(page1_anno);
+  ASSERT_NE(nullptr, links);
+  EXPECT_GE(CountMiniexpArray(links), 2);
+  std::free(links);
+  ddjvu_miniexp_release(subset, page1_anno);
+
+  ddjvu_document_release(subset);
+  ddjvu_document_release(doc);
+  ddjvu_context_release(ctx);
+
+  std::error_code ec;
+  std::filesystem::remove_all(indirect_index.parent_path() / indirect_index.stem(), ec);
+  std::filesystem::remove(indirect_index, ec);
+}
+
+TEST(DdJvuApiTest, ReferenceSinglePageFixturePrintEpsWithTextProducesOutput)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_bg_fgtext_hidden_links.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_ref_eps");
+  ASSERT_NE(nullptr, ctx);
+  ddjvu_document_t *doc =
+      ddjvu_document_create_by_filename_utf8(ctx, fixture->string().c_str(), 0);
+  ASSERT_NE(nullptr, doc);
+  ddjvu_pageinfo_t info{};
+  ASSERT_TRUE(WaitForPageInfoOk(ctx, doc, &info));
+
+  FILE *out = std::tmpfile();
+  ASSERT_NE(nullptr, out);
+  const char *opts[] = {"pages=1", "format=eps", "mode=color", "text=yes"};
+  ddjvu_job_t *job =
+      ddjvu_document_print(doc, out, static_cast<int>(std::size(opts)), opts);
+  ASSERT_NE(nullptr, job);
+  EXPECT_TRUE(WaitForJobTerminal(ctx, job));
+  EXPECT_EQ(DDJVU_JOB_OK, ddjvu_job_status(job));
+  EXPECT_GT(GetFileSize(out), 0);
+  ddjvu_job_release(job);
+  std::fclose(out);
+
+  ddjvu_document_release(doc);
+  ddjvu_context_release(ctx);
+}
+
+TEST(DdJvuApiTest, RealBundledLegacyExamplesExposeOutlineAndPageAnno)
+{
+  const std::optional<std::filesystem::path> navm =
+      FindReferenceFixtureFile("real_lizard2003_navm.djvu");
+  const std::optional<std::filesystem::path> antz =
+      FindReferenceFixtureFile("real_lizard2005_antz.djvu");
+  if (!navm || !antz)
+    GTEST_SKIP() << "reference fixture not found";
+
+  ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_real_legacy");
+  ASSERT_NE(nullptr, ctx);
+
+  ddjvu_document_t *navm_doc =
+      ddjvu_document_create_by_filename_utf8(ctx, navm->string().c_str(), 0);
+  ASSERT_NE(nullptr, navm_doc);
+  ddjvu_pageinfo_t navm_info{};
+  ASSERT_TRUE(WaitForPageInfoOk(ctx, navm_doc, &navm_info));
+  EXPECT_EQ(DDJVU_DOCTYPE_BUNDLED, ddjvu_document_get_type(navm_doc));
+  EXPECT_EQ(6, ddjvu_document_get_pagenum(navm_doc));
+
+  miniexp_t outline = ddjvu_document_get_outline(navm_doc);
+  for (int i = 0; i < 100 && outline == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    outline = ddjvu_document_get_outline(navm_doc);
+  }
+  ASSERT_NE(miniexp_dummy, outline);
+  ASSERT_NE(miniexp_nil, outline);
+  ddjvu_miniexp_release(navm_doc, outline);
+
+  miniexp_t navm_page_anno = ddjvu_document_get_pageanno(navm_doc, 0);
+  for (int i = 0; i < 100 && navm_page_anno == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    navm_page_anno = ddjvu_document_get_pageanno(navm_doc, 0);
+  }
+  ASSERT_NE(miniexp_dummy, navm_page_anno);
+  ASSERT_TRUE(miniexp_consp(navm_page_anno));
+  ddjvu_miniexp_release(navm_doc, navm_page_anno);
+
+  ddjvu_document_t *antz_doc =
+      ddjvu_document_create_by_filename_utf8(ctx, antz->string().c_str(), 0);
+  ASSERT_NE(nullptr, antz_doc);
+  ddjvu_pageinfo_t antz_info{};
+  ASSERT_TRUE(WaitForPageInfoOk(ctx, antz_doc, &antz_info));
+  EXPECT_EQ(DDJVU_DOCTYPE_BUNDLED, ddjvu_document_get_type(antz_doc));
+  EXPECT_EQ(1, ddjvu_document_get_pagenum(antz_doc));
+
+  miniexp_t antz_page_anno = ddjvu_document_get_pageanno(antz_doc, 0);
+  for (int i = 0; i < 100 && antz_page_anno == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    antz_page_anno = ddjvu_document_get_pageanno(antz_doc, 0);
+  }
+  ASSERT_NE(miniexp_dummy, antz_page_anno);
+  ASSERT_TRUE(miniexp_consp(antz_page_anno));
+  ddjvu_miniexp_release(antz_doc, antz_page_anno);
+
+  ddjvu_document_release(antz_doc);
+  ddjvu_document_release(navm_doc);
+  ddjvu_context_release(ctx);
+}
+
+TEST(DdJvuApiTest, RealBundledRussianBookExposesOutlineSharedAnnoAndUnicodeText)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("real_djvulibre_book_ru.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  ddjvu_context_t *ctx = ddjvu_context_create("libdjvu_gtest_api_real_book_ru");
+  ASSERT_NE(nullptr, ctx);
+  ddjvu_document_t *doc =
+      ddjvu_document_create_by_filename_utf8(ctx, fixture->string().c_str(), 0);
+  ASSERT_NE(nullptr, doc);
+
+  ddjvu_pageinfo_t info{};
+  ASSERT_TRUE(WaitForPageInfoOk(ctx, doc, &info));
+  EXPECT_EQ(DDJVU_DOCTYPE_BUNDLED, ddjvu_document_get_type(doc));
+  EXPECT_EQ(48, ddjvu_document_get_pagenum(doc));
+
+  bool saw_shared = false;
+  const int filenum = ddjvu_document_get_filenum(doc);
+  EXPECT_GE(filenum, 49);
+  for (int i = 0; i < filenum; ++i)
+  {
+    ddjvu_fileinfo_t fi{};
+    if (ddjvu_document_get_fileinfo(doc, i, &fi) != DDJVU_JOB_OK)
+      continue;
+    saw_shared = saw_shared || (fi.type == 'S');
+  }
+  EXPECT_TRUE(saw_shared);
+
+  miniexp_t outline = ddjvu_document_get_outline(doc);
+  for (int i = 0; i < 100 && outline == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    outline = ddjvu_document_get_outline(doc);
+  }
+  ASSERT_NE(miniexp_dummy, outline);
+  ASSERT_NE(miniexp_nil, outline);
+  ddjvu_miniexp_release(doc, outline);
+
+  miniexp_t shared_anno = ddjvu_document_get_anno(doc, 1);
+  for (int i = 0; i < 100 && shared_anno == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    shared_anno = ddjvu_document_get_anno(doc, 1);
+  }
+  ASSERT_NE(miniexp_dummy, shared_anno);
+  ASSERT_TRUE(shared_anno == miniexp_nil || miniexp_consp(shared_anno));
+  if (shared_anno != miniexp_nil)
+    ddjvu_miniexp_release(doc, shared_anno);
+
+  miniexp_t text = ddjvu_document_get_pagetext(doc, 0, "word");
+  for (int i = 0; i < 100 && text == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    text = ddjvu_document_get_pagetext(doc, 0, "word");
+  }
+  ASSERT_NE(miniexp_dummy, text);
+  ASSERT_NE(miniexp_nil, text);
+  EXPECT_TRUE(MiniexpContainsNonAsciiString(text));
+  ddjvu_miniexp_release(doc, text);
+
+  miniexp_t page_anno = ddjvu_document_get_pageanno(doc, 0);
+  for (int i = 0; i < 100 && page_anno == miniexp_dummy; ++i)
+  {
+    PumpMessages(ctx);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    page_anno = ddjvu_document_get_pageanno(doc, 0);
+  }
+  ASSERT_NE(miniexp_dummy, page_anno);
+  ASSERT_TRUE(miniexp_consp(page_anno));
+  ddjvu_miniexp_release(doc, page_anno);
+
   ddjvu_document_release(doc);
   ddjvu_context_release(ctx);
 }

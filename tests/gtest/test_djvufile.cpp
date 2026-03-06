@@ -3,11 +3,14 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "BSByteStream.h"
 #include "ByteStream.h"
 #include "DataPool.h"
+#include "DjVuDocument.h"
 #include "DjVuFile.h"
 #include "DjVuInfo.h"
 #include "DjVuText.h"
@@ -57,6 +60,96 @@ void WriteByteStreamToFile(const GP<ByteStream> &bs, const std::filesystem::path
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   if (!data.empty())
     out.write(data.data(), static_cast<std::streamsize>(data.size()));
+}
+
+std::optional<std::filesystem::path> FindReferenceFixtureFile(const char *name)
+{
+  const std::filesystem::path p1 = std::filesystem::path("tests/fixtures/reference") / name;
+  if (std::filesystem::exists(p1))
+    return p1;
+  const std::filesystem::path p2 = std::filesystem::path("fixtures/reference") / name;
+  if (std::filesystem::exists(p2))
+    return p2;
+  return std::nullopt;
+}
+
+std::string ReadAll(const GP<ByteStream> &bs)
+{
+  bs->seek(0, SEEK_SET);
+  std::string out;
+  char chunk[512];
+  while (true)
+  {
+    const size_t got = bs->read(chunk, sizeof(chunk));
+    if (!got)
+      break;
+    out.append(chunk, got);
+  }
+  return out;
+}
+
+bool HasChunk(const GP<DjVuFile> &file, const char *name)
+{
+  for (int i = 0; i < file->get_chunks_number(); ++i)
+  {
+    if (file->get_chunk_name(i) == name)
+      return true;
+  }
+  return false;
+}
+
+int IncludedFilesCount(const GP<DjVuFile> &file)
+{
+  return file ? file->get_included_files(false).size() : 0;
+}
+
+struct PageSignals
+{
+  bool contains_anno = false;
+  bool contains_text = false;
+  bool contains_meta = false;
+  long anno_size = -1;
+  long text_size = -1;
+  long meta_size = -1;
+
+  bool operator==(const PageSignals &other) const
+  {
+    return contains_anno == other.contains_anno &&
+           contains_text == other.contains_text &&
+           contains_meta == other.contains_meta &&
+           anno_size == other.anno_size &&
+           text_size == other.text_size &&
+           meta_size == other.meta_size;
+  }
+};
+
+std::vector<PageSignals> CollectPageSignals(const GP<DjVuDocument> &doc)
+{
+  std::vector<PageSignals> out;
+  const int pages = doc->get_pages_num();
+  out.reserve(static_cast<size_t>(pages));
+  for (int i = 0; i < pages; ++i)
+  {
+    GP<DjVuFile> file = doc->get_djvu_file(i, false);
+    EXPECT_TRUE(file != 0);
+    if (!file)
+      continue;
+
+    EXPECT_NO_THROW(file->resume_decode(true));
+    PageSignals s;
+    s.contains_anno = file->contains_anno();
+    s.contains_text = file->contains_text();
+    s.contains_meta = file->contains_meta();
+
+    GP<ByteStream> anno = file->get_anno();
+    GP<ByteStream> text = file->get_text();
+    GP<ByteStream> meta = file->get_meta();
+    s.anno_size = anno ? anno->size() : -1;
+    s.text_size = text ? text->size() : -1;
+    s.meta_size = meta ? meta->size() : -1;
+    out.push_back(s);
+  }
+  return out;
 }
 
 }  // namespace
@@ -249,6 +342,50 @@ TEST(DjVuFileTest, UrlBackedInsertUnlinkRebuildResetAndMoveApisWork)
   EXPECT_NO_THROW(file->move(moved_url));
   EXPECT_NO_THROW(file->set_name("renamed.djvu"));
   EXPECT_STREQ("renamed.djvu", (const char *)file->get_url().fname());
+}
+
+TEST(DjVuFileTest, SharedResourceFixtureRawExportControlsIncludeInlining)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("mp2_bundled_shared_resources.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocument> doc = DjVuDocument::create_wait(fixture_url);
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->is_init_complete());
+  ASSERT_EQ(2, doc->get_pages_num());
+
+  GP<DjVuFile> root = doc->get_djvu_file(-1, false);
+  ASSERT_TRUE(root != 0);
+
+  const std::string with_no_ndir_flag_off = ReadAll(root->get_djvu_bytestream(false, false));
+  const std::string with_no_ndir_flag_on = ReadAll(root->get_djvu_bytestream(false, true));
+  EXPECT_EQ(std::string::npos, with_no_ndir_flag_off.find("NDIR"));
+  EXPECT_EQ(std::string::npos, with_no_ndir_flag_on.find("NDIR"));
+  EXPECT_EQ(with_no_ndir_flag_off.size(), with_no_ndir_flag_on.size());
+
+  GP<DjVuFile> include_owner;
+  for (int i = 0; i < doc->get_pages_num(); ++i)
+  {
+    GP<DjVuFile> file = doc->get_djvu_file(i, false);
+    ASSERT_TRUE(file != 0);
+    EXPECT_NO_THROW(file->resume_decode(true));
+    if (HasChunk(file, "INCL"))
+    {
+      include_owner = file;
+      break;
+    }
+  }
+  ASSERT_TRUE(include_owner != 0);
+
+  const std::string with_incl = ReadAll(include_owner->get_djvu_bytestream(false, true));
+  const std::string inlined = ReadAll(include_owner->get_djvu_bytestream(true, true));
+  EXPECT_NE(std::string::npos, with_incl.find("INCL"));
+  EXPECT_NE(std::string::npos, with_incl.find("shared_page2.djbz"));
+  EXPECT_EQ(std::string::npos, inlined.find("INCL"));
+  EXPECT_GT(inlined.size(), with_incl.size());
 }
 
 TEST(DjVuFileTest, AnnotationTextMetaExtractionApisReturnContent)
@@ -445,4 +582,186 @@ TEST(DjVuFileTest, GetDjvuDataWithIncludedFilesPathIsReachable)
     datapool_path_reached = true;
   }
   EXPECT_TRUE(datapool_path_reached);
+}
+
+TEST(DjVuFileTest, ReferenceFixtureSaveAsRoundtripPreservesAnnoAndTextExtraction)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_bg_fgtext_hidden_links.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocument> src = DjVuDocument::create_wait(fixture_url);
+  ASSERT_TRUE(src != 0);
+  ASSERT_TRUE(src->is_init_complete());
+  ASSERT_EQ(1, src->get_pages_num());
+
+  const std::filesystem::path bundled_path = MakeTempPath("ref_roundtrip_bundled.djvu");
+  const GURL bundled_url = GURL::Filename::UTF8(bundled_path.string().c_str());
+  EXPECT_NO_THROW(src->save_as(bundled_url, true));
+  EXPECT_TRUE(std::filesystem::exists(bundled_path));
+
+  GP<DjVuDocument> bundled = DjVuDocument::create_wait(bundled_url);
+  ASSERT_TRUE(bundled != 0);
+  ASSERT_TRUE(bundled->is_init_complete());
+  ASSERT_EQ(1, bundled->get_pages_num());
+
+  GP<DjVuFile> bundled_file = bundled->get_djvu_file(0, false);
+  ASSERT_TRUE(bundled_file != 0);
+  EXPECT_NO_THROW(bundled_file->resume_decode(true));
+  EXPECT_TRUE(bundled_file->contains_anno());
+  EXPECT_TRUE(bundled_file->contains_text());
+  EXPECT_FALSE(bundled_file->contains_meta());
+  EXPECT_TRUE(bundled_file->get_anno() != 0);
+  EXPECT_TRUE(bundled_file->get_text() != 0);
+
+  const std::filesystem::path indirect_dir = MakeTempPath("ref_roundtrip_indirect");
+  std::filesystem::create_directories(indirect_dir);
+  const std::filesystem::path indirect_idx = indirect_dir / "index.djvu";
+  const GURL indirect_url = GURL::Filename::UTF8(indirect_idx.string().c_str());
+  EXPECT_NO_THROW(src->save_as(indirect_url, false));
+  EXPECT_TRUE(std::filesystem::exists(indirect_idx));
+
+  GP<DjVuDocument> indirect = DjVuDocument::create_wait(indirect_url);
+  ASSERT_TRUE(indirect != 0);
+  ASSERT_TRUE(indirect->is_init_complete());
+  ASSERT_EQ(1, indirect->get_pages_num());
+
+  GP<DjVuFile> indirect_file = indirect->get_djvu_file(0, false);
+  ASSERT_TRUE(indirect_file != 0);
+  EXPECT_NO_THROW(indirect_file->resume_decode(true));
+  EXPECT_TRUE(indirect_file->contains_anno());
+  EXPECT_TRUE(indirect_file->contains_text());
+  EXPECT_TRUE(indirect_file->get_anno() != 0);
+  EXPECT_TRUE(indirect_file->get_text() != 0);
+}
+
+TEST(DjVuFileTest, ReferenceMultipageRoundtripPreservesPerPageExtractionSignals)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("mp3_bundled_mixed_layers.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocument> src = DjVuDocument::create_wait(fixture_url);
+  ASSERT_TRUE(src != 0);
+  ASSERT_TRUE(src->is_init_complete());
+  ASSERT_EQ(3, src->get_pages_num());
+
+  const std::vector<PageSignals> source = CollectPageSignals(src);
+  ASSERT_EQ(3u, source.size());
+  EXPECT_FALSE(source[0].contains_anno);
+  EXPECT_FALSE(source[0].contains_text);
+  EXPECT_FALSE(source[1].contains_anno);
+  EXPECT_FALSE(source[1].contains_text);
+  EXPECT_TRUE(source[2].contains_anno);
+  EXPECT_TRUE(source[2].contains_text);
+
+  const std::filesystem::path bundled_path = MakeTempPath("ref_multipage_bundle.djvu");
+  const GURL bundled_url = GURL::Filename::UTF8(bundled_path.string().c_str());
+  EXPECT_NO_THROW(src->save_as(bundled_url, true));
+
+  GP<DjVuDocument> bundled = DjVuDocument::create_wait(bundled_url);
+  ASSERT_TRUE(bundled != 0);
+  ASSERT_TRUE(bundled->is_init_complete());
+  EXPECT_EQ(source, CollectPageSignals(bundled));
+
+  const std::filesystem::path indirect_dir = MakeTempPath("ref_multipage_indirect");
+  std::filesystem::create_directories(indirect_dir);
+  const std::filesystem::path indirect_idx = indirect_dir / "index.djvu";
+  const GURL indirect_url = GURL::Filename::UTF8(indirect_idx.string().c_str());
+  EXPECT_NO_THROW(src->save_as(indirect_url, false));
+
+  GP<DjVuDocument> indirect = DjVuDocument::create_wait(indirect_url);
+  ASSERT_TRUE(indirect != 0);
+  ASSERT_TRUE(indirect->is_init_complete());
+  EXPECT_EQ(source, CollectPageSignals(indirect));
+}
+
+TEST(DjVuFileTest, ReferenceSharedResourceRoundtripPreservesTextSignalsAcrossPages)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("mp2_bundled_shared_resources.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocument> src = DjVuDocument::create_wait(fixture_url);
+  ASSERT_TRUE(src != 0);
+  ASSERT_TRUE(src->is_init_complete());
+  ASSERT_EQ(2, src->get_pages_num());
+
+  const std::vector<PageSignals> source = CollectPageSignals(src);
+  ASSERT_EQ(2u, source.size());
+
+  const std::filesystem::path indirect_dir = MakeTempPath("ref_shared_indirect");
+  std::filesystem::create_directories(indirect_dir);
+  const GURL indirect_url =
+      GURL::Filename::UTF8((indirect_dir / "index.djvu").string().c_str());
+  EXPECT_NO_THROW(src->save_as(indirect_url, false));
+
+  GP<DjVuDocument> indirect = DjVuDocument::create_wait(indirect_url);
+  ASSERT_TRUE(indirect != 0);
+  ASSERT_TRUE(indirect->is_init_complete());
+  EXPECT_EQ(source, CollectPageSignals(indirect));
+}
+
+TEST(DjVuFileTest, SequentialRoundtripPreservesIncludedFileCountsForSharedFixture)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("mp2_bundled_shared_resources.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  GP<DjVuDocument> source =
+      DjVuDocument::create_wait(GURL::Filename::UTF8(fixture->string().c_str()));
+  ASSERT_TRUE(source != 0);
+  ASSERT_TRUE(source->is_init_complete());
+
+  std::vector<int> include_counts;
+  for (int i = 0; i < source->get_pages_num(); ++i)
+  {
+    GP<DjVuFile> file = source->get_djvu_file(i, false);
+    ASSERT_TRUE(file != 0);
+    EXPECT_NO_THROW(file->resume_decode(true));
+    include_counts.push_back(IncludedFilesCount(file));
+  }
+
+  const std::filesystem::path indirect_dir = MakeTempPath("seq_shared_file_indirect");
+  std::filesystem::create_directories(indirect_dir);
+  const GURL indirect_url =
+      GURL::Filename::UTF8((indirect_dir / "index.djvu").string().c_str());
+  EXPECT_NO_THROW(source->save_as(indirect_url, false));
+
+  GP<DjVuDocument> indirect = DjVuDocument::create_wait(indirect_url);
+  ASSERT_TRUE(indirect != 0);
+  ASSERT_TRUE(indirect->is_init_complete());
+  ASSERT_EQ(source->get_pages_num(), indirect->get_pages_num());
+
+  for (int i = 0; i < indirect->get_pages_num(); ++i)
+  {
+    GP<DjVuFile> file = indirect->get_djvu_file(i, false);
+    ASSERT_TRUE(file != 0);
+    EXPECT_NO_THROW(file->resume_decode(true));
+    EXPECT_EQ(include_counts[static_cast<size_t>(i)], IncludedFilesCount(file));
+  }
+
+  const std::filesystem::path bundled_path = MakeTempPath("seq_shared_file_bundle.djvu");
+  const GURL bundled_url = GURL::Filename::UTF8(bundled_path.string().c_str());
+  EXPECT_NO_THROW(indirect->save_as(bundled_url, true));
+
+  GP<DjVuDocument> bundled = DjVuDocument::create_wait(bundled_url);
+  ASSERT_TRUE(bundled != 0);
+  ASSERT_TRUE(bundled->is_init_complete());
+  ASSERT_EQ(source->get_pages_num(), bundled->get_pages_num());
+
+  for (int i = 0; i < bundled->get_pages_num(); ++i)
+  {
+    GP<DjVuFile> file = bundled->get_djvu_file(i, false);
+    ASSERT_TRUE(file != 0);
+    EXPECT_NO_THROW(file->resume_decode(true));
+    EXPECT_EQ(include_counts[static_cast<size_t>(i)], IncludedFilesCount(file));
+  }
 }

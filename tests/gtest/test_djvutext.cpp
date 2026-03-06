@@ -1,8 +1,66 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <filesystem>
+#include <optional>
+#include <string>
+
 #include "ByteStream.h"
+#include "DjVuDocument.h"
+#include "DjVuFile.h"
 #include "DjVuText.h"
 #include "IFFByteStream.h"
+
+namespace {
+
+std::optional<std::filesystem::path> FindReferenceFixtureFile(const char *name)
+{
+  const std::filesystem::path p1 = std::filesystem::path("tests/fixtures/reference") / name;
+  if (std::filesystem::exists(p1))
+    return p1;
+  const std::filesystem::path p2 = std::filesystem::path("fixtures/reference") / name;
+  if (std::filesystem::exists(p2))
+    return p2;
+  return std::nullopt;
+}
+
+bool ContainsNonAscii(const GUTF8String &s)
+{
+  const char *p = (const char *)s;
+  for (; p && *p; ++p)
+    if (static_cast<unsigned char>(*p) & 0x80)
+      return true;
+  return false;
+}
+
+GUTF8String DecodeFixtureText(const std::filesystem::path &path)
+{
+  const GURL url = GURL::Filename::UTF8(path.string().c_str());
+  GP<DjVuDocument> doc = DjVuDocument::create_wait(url);
+  EXPECT_TRUE(doc != 0);
+  if (!doc)
+    return GUTF8String();
+  EXPECT_TRUE(doc->is_init_complete());
+
+  GP<DjVuFile> file = doc->get_djvu_file(0, false);
+  EXPECT_TRUE(file != 0);
+  if (!file)
+    return GUTF8String();
+
+  EXPECT_NO_THROW(file->resume_decode(true));
+  GP<ByteStream> text_bs = file->get_text();
+  EXPECT_TRUE(text_bs != 0);
+  if (!text_bs)
+    return GUTF8String();
+
+  GP<DjVuText> text = DjVuText::create();
+  EXPECT_NO_THROW(text->decode(text_bs));
+  if (!text || !text->txt)
+    return GUTF8String();
+  return text->txt->textUTF8;
+}
+
+}  // namespace
 
 TEST(DjVuTextTest, DefaultXmlWithoutTextIsHiddenTextTag)
 {
@@ -163,4 +221,102 @@ TEST(DjVuTextTest, ZoneNormalizeAndHelpersAreReachable)
   GUTF8String in_rect;
   GList<DjVuTXT::Zone *> zones = txt->find_text_in_rect(GRect(0, 0, 120, 80), in_rect);
   EXPECT_GE(zones.size(), 0);
+}
+
+TEST(DjVuTextTest, ReferenceUnicodeFixtureDecodesRealOcrTextAndXml)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_utf8_multilang_hidden.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocument> doc = DjVuDocument::create_wait(fixture_url);
+  ASSERT_TRUE(doc != 0);
+  ASSERT_TRUE(doc->is_init_complete());
+
+  GP<DjVuFile> file = doc->get_djvu_file(0, false);
+  ASSERT_TRUE(file != 0);
+  EXPECT_NO_THROW(file->resume_decode(true));
+  ASSERT_TRUE(file->contains_text());
+
+  GP<ByteStream> text_bs = file->get_text();
+  ASSERT_TRUE(text_bs != 0);
+
+  GP<DjVuText> text = DjVuText::create();
+  ASSERT_TRUE(text != 0);
+  EXPECT_NO_THROW(text->decode(text_bs));
+  ASSERT_TRUE(text->txt != 0);
+  EXPECT_GT(text->txt->textUTF8.length(), 0);
+  EXPECT_TRUE(ContainsNonAscii(text->txt->textUTF8));
+
+  const GUTF8String xml = text->get_xmlText(800);
+  EXPECT_NE(-1, xml.search("HIDDENTEXT"));
+  EXPECT_TRUE(ContainsNonAscii(xml));
+
+  GUTF8String selected;
+  GList<DjVuTXT::Zone *> zones = text->txt->find_text_in_rect(GRect(0, 0, 2000, 2000), selected);
+  EXPECT_GE(zones.size(), 0);
+  EXPECT_GE(selected.length(), 0);
+}
+
+TEST(DjVuTextTest, ReferenceHiddenOnlyFixtureRoundtripPreservesDecodedText)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_hidden_only_no_visible.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GUTF8String original = DecodeFixtureText(*fixture);
+  EXPECT_NE(-1, original.search("HIDDEN_ONLY_TEXT_123"));
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocument> src = DjVuDocument::create_wait(fixture_url);
+  ASSERT_TRUE(src != 0);
+  ASSERT_TRUE(src->is_init_complete());
+
+  const std::filesystem::path bundled_path =
+      std::filesystem::temp_directory_path() /
+      ("djvu_gtest_text_hidden_only_" +
+       std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".djvu");
+  const GURL bundled_url = GURL::Filename::UTF8(bundled_path.string().c_str());
+  EXPECT_NO_THROW(src->save_as(bundled_url, true));
+
+  const GUTF8String roundtrip = DecodeFixtureText(bundled_path);
+  EXPECT_STREQ((const char *)original, (const char *)roundtrip);
+
+  std::error_code ec;
+  std::filesystem::remove(bundled_path, ec);
+}
+
+TEST(DjVuTextTest, ReferenceUnicodeFixtureIndirectRoundtripPreservesMultilingualText)
+{
+  const std::optional<std::filesystem::path> fixture =
+      FindReferenceFixtureFile("sp_utf8_multilang_hidden.djvu");
+  if (!fixture)
+    GTEST_SKIP() << "reference fixture not found";
+
+  const GUTF8String original = DecodeFixtureText(*fixture);
+  EXPECT_TRUE(ContainsNonAscii(original));
+
+  const GURL fixture_url = GURL::Filename::UTF8(fixture->string().c_str());
+  GP<DjVuDocument> src = DjVuDocument::create_wait(fixture_url);
+  ASSERT_TRUE(src != 0);
+  ASSERT_TRUE(src->is_init_complete());
+
+  const std::filesystem::path indirect_dir =
+      std::filesystem::temp_directory_path() /
+      ("djvu_gtest_text_unicode_" +
+       std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::filesystem::create_directories(indirect_dir);
+  const std::filesystem::path indirect_idx = indirect_dir / "index.djvu";
+  const GURL indirect_url = GURL::Filename::UTF8(indirect_idx.string().c_str());
+  EXPECT_NO_THROW(src->save_as(indirect_url, false));
+
+  const GUTF8String roundtrip = DecodeFixtureText(indirect_idx);
+  EXPECT_STREQ((const char *)original, (const char *)roundtrip);
+  EXPECT_TRUE(ContainsNonAscii(roundtrip));
+
+  std::error_code ec;
+  std::filesystem::remove_all(indirect_dir, ec);
 }

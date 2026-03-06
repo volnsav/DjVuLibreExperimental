@@ -6,3 +6,22 @@ mp2_bundled.djvu -> p1:bg:#E6F0FF+visible+hidden,p2:bg:#FFF3E0+VISIBLE_TEXT_PAGE
 mp2_indirect/index.djvu -> same as mp2_bundled,links:internal(1->2),pages:2,format:indirect
 sp_unicode_hidden.djvu -> bg:#E6F0FF,text:VISIBLE_TEXT_PAGE1_123,hidden:Привіт DjVu тест 123,links:no,pages:1,format:bundled
 sp_bg_only_large.djvu -> bg:#E6F0FF,text:no,hidden:no,links:no,pages:1,size:2000x1500,format:bundled
+sp_anno_only_links.djvu -> bg:#E6F0FF,text:no,hidden:no,links:external+internal-self,pages:1,format:bundled
+sp_hidden_only_no_visible.djvu -> bg:#E6F0FF,text:no,hidden:HIDDEN_ONLY_TEXT_123,links:no,pages:1,format:bundled
+sp_rotation_90.djvu -> bg:#E6F0FF,text:ROT90,hidden:no,links:no,pages:1,rotation:90,format:bundled
+sp_rotation_180.djvu -> bg:#E6F0FF,text:ROT180,hidden:no,links:no,pages:1,rotation:180,format:bundled
+sp_rotation_270.djvu -> bg:#E6F0FF,text:ROT270,hidden:no,links:no,pages:1,rotation:270,format:bundled
+sp_palette_indexed_bg.djvu -> bg:indexed-palette,text:no,hidden:no,links:no,pages:1,format:bundled
+sp_bw_mask_heavy.djvu -> bg:#E6F0FF,fg:heavy-bw-mask,text:VISIBLE_MASK_TEXT,hidden:no,links:no,pages:1,format:bundled
+mp3_bundled_mixed_layers.djvu -> p1:bg-only,p2:bg+visible,p3:bg+visible+hidden+links,links:internal(3->1)+external,pages:3,format:bundled
+mp3_indirect_mixed_layers/index.djvu -> same as mp3_bundled_mixed_layers,links:internal(3->1)+external,pages:3,format:indirect
+mp2_bundled_shared_resources.djvu -> p1/p2:shared-resources,text:visible+hidden,links:no,pages:2,format:bundled
+sp_utf8_multilang_hidden.djvu -> bg:#E6F0FF,text:VISIBLE_TEXT_PAGE1_123,hidden:Привіт DjVu δοκιμή 日本語 test 123,links:no,pages:1,format:bundled
+sp_links_edgecases.djvu -> bg:#E6F0FF,text:VISIBLE_LINKS_EDGE,hidden:no,links:https+mailto+internal-self,pages:1,format:bundled
+legacy_oldbundled.djvu -> p1:bg+hidden+INCL(legacy_dir.djvi),p2:bg-only+INCL(legacy_dir.djvi),ndir:embedded-DJVI,pages:2,format:old_bundled
+legacy_oldindexed/page1.djvu -> entry:page1,bg+hidden+INCL(directory.djvi),ndir:external-DJVI,pages:2,format:old_indexed
+legacy_oldindexed/page2.djvu -> page:2,bg-only+INCL(directory.djvi),ndir:external-DJVI,pages:2,format:old_indexed
+legacy_oldindexed/directory.djvi -> component:NDIR,page-names:page1.djvu+page2.djvu,format:old_indexed
+real_lizard2003_navm.djvu -> source:doc/old/lizard2003-navm.djvu,pages:6,format:bundled,features:NAVM+ANTz
+real_lizard2005_antz.djvu -> source:doc/old/lizard2005-antz.djvu,pages:1,format:bundled,features:ANTz
+real_djvulibre_book_ru.djvu -> source:doc/djvulibre-book-ru.djvu,pages:48,format:bundled,features:NAVM+shared-anno+ANTz+TXTz+unicode

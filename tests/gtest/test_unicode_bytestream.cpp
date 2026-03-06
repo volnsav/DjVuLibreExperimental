@@ -66,6 +66,21 @@ TEST(UnicodeByteStreamTest, WriteReadAndEncodingResetPaths)
   EXPECT_STREQ("alpha\n", ubs->gets());
 }
 
+TEST(UnicodeByteStreamTest, SetEncodingToUcs4LittleEndianDecodesContent)
+{
+  const unsigned char payload[] = {
+      0x3C, 0x00, 0x00, 0x00,
+      0x61, 0x00, 0x00, 0x00,
+      0x2F, 0x00, 0x00, 0x00,
+      0x3E, 0x00, 0x00, 0x00
+  };
+  GP<ByteStream> bs = ByteStream::create(payload, sizeof(payload));
+  GP<UnicodeByteStream> ubs = UnicodeByteStream::create(bs, GStringRep::XUTF8);
+
+  ubs->set_encoding("UCS-4");
+  EXPECT_STREQ("<a/>", ubs->gets(0, '>', true));
+}
+
 TEST(XMLByteStreamTest, Utf16LeBomIsDecoded)
 {
   const unsigned char payload[] = {
@@ -86,4 +101,60 @@ TEST(XMLByteStreamTest, Utf16BeBomIsDecoded)
 
   const GUTF8String token = xml->gets(0, '>', true);
   EXPECT_STREQ("<a/>", token);
+}
+
+TEST(XMLByteStreamTest, Ucs4BigEndianSignatureIsDetected)
+{
+  const unsigned char payload[] = {
+      0x00, 0x00, 0x00, 0x3C,
+      0x00, 0x00, 0x00, 0x61,
+      0x00, 0x00, 0x00, 0x2F,
+      0x00, 0x00, 0x00, 0x3E
+  };
+  GP<ByteStream> bs = ByteStream::create(payload, sizeof(payload));
+  GP<XMLByteStream> xml = XMLByteStream::create(bs);
+
+  EXPECT_STREQ("<a/>", xml->gets(0, '>', true));
+}
+
+TEST(XMLByteStreamTest, Ucs4LittleEndianSignatureIsDetected)
+{
+  const unsigned char payload[] = {
+      0x3C, 0x00, 0x00, 0x00,
+      0x61, 0x00, 0x00, 0x00,
+      0x2F, 0x00, 0x00, 0x00,
+      0x3E, 0x00, 0x00, 0x00
+  };
+  GP<ByteStream> bs = ByteStream::create(payload, sizeof(payload));
+  GP<XMLByteStream> xml = XMLByteStream::create(bs);
+
+  EXPECT_STREQ("<a/>", xml->gets(0, '>', true));
+}
+
+TEST(XMLByteStreamTest, Ucs4_2143SignatureIsDetected)
+{
+  const unsigned char payload[] = {
+      0x00, 0x00, 0x3C, 0x00,
+      0x00, 0x00, 0x61, 0x00,
+      0x00, 0x00, 0x2F, 0x00,
+      0x00, 0x00, 0x3E, 0x00
+  };
+  GP<ByteStream> bs = ByteStream::create(payload, sizeof(payload));
+  GP<XMLByteStream> xml = XMLByteStream::create(bs);
+
+  EXPECT_STREQ("<a/>", xml->gets(0, '>', true));
+}
+
+TEST(XMLByteStreamTest, Ucs4_3412SignatureIsDetected)
+{
+  const unsigned char payload[] = {
+      0x00, 0x3C, 0x00, 0x00,
+      0x00, 0x61, 0x00, 0x00,
+      0x00, 0x2F, 0x00, 0x00,
+      0x00, 0x3E, 0x00, 0x00
+  };
+  GP<ByteStream> bs = ByteStream::create(payload, sizeof(payload));
+  GP<XMLByteStream> xml = XMLByteStream::create(bs);
+
+  EXPECT_STREQ("<a/>", xml->gets(0, '>', true));
 }
