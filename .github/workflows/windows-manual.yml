@@ -1,28 +1,52 @@
-name: Windows Build
+name: Windows Manual Build
 
 on:
-  push:
-    branches:
-      - develop
-      - master
-  pull_request:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Build profile"
+        required: false
+        default: x64-release
+        type: choice
+        options:
+          - x64-release
+          - x64-debug
+          - both
 
 jobs:
-  build_pr:
-    name: ${{ matrix.config }} x64
+  build_manual:
+    name: Manual ${{ matrix.config }} x64
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        config:
-          - Release
-          - Debug
+        include:
+          - config: Release
+          - config: Debug
 
     steps:
+      - name: Select mode
+        id: mode
+        shell: pwsh
+        run: |
+          $mode = '${{ inputs.mode }}'
+          $config = '${{ matrix.config }}'
+          $run = $false
+          if ($mode -eq 'both') {
+            $run = $true
+          } elseif ($mode -eq 'x64-release' -and $config -eq 'Release') {
+            $run = $true
+          } elseif ($mode -eq 'x64-debug' -and $config -eq 'Debug') {
+            $run = $true
+          }
+          "run=$($run.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
       - name: Checkout
+        if: ${{ steps.mode.outputs.run == 'true' }}
         uses: actions/checkout@v4
 
       - name: Prepare third-party sources (jpeg/zlib/tiff)
+        if: ${{ steps.mode.outputs.run == 'true' }}
         shell: pwsh
         run: |
           $winRoot = Join-Path $env:GITHUB_WORKSPACE "windows"
@@ -59,6 +83,7 @@ jobs:
           }
 
       - name: Setup vcpkg + gtest
+        if: ${{ steps.mode.outputs.run == 'true' }}
         shell: pwsh
         run: |
           $vcpkgRoot = Join-Path $env:RUNNER_TEMP "vcpkg"
@@ -71,11 +96,13 @@ jobs:
           "VCPKG_ROOT=$vcpkgRoot" >> $env:GITHUB_ENV
 
       - name: Run Windows test runner
+        if: ${{ steps.mode.outputs.run == 'true' }}
         shell: pwsh
         run: |
           .\run_windows_tests.ps1 -Configuration ${{ matrix.config }} -Platform x64 -Toolset auto
 
       - name: Upload artifact
+        if: ${{ steps.mode.outputs.run == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: djvulibre-windows-${{ matrix.config }}-x64

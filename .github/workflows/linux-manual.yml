@@ -1,22 +1,31 @@
-name: Linux Build
+name: Linux Manual Build
 
 on:
-  push:
-    branches:
-      - develop
-      - master
-  pull_request:
-
-jobs:
-  build_pr:
-    name: ${{ matrix.mode }} + tests
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        mode:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Build profile"
+        required: false
+        default: x64-release
+        type: choice
+        options:
           - x64-release
           - x64-debug
+      run_tests:
+        description: "Run test suite (make check)"
+        required: false
+        default: true
+        type: boolean
+      enable_gtest:
+        description: "Enable GoogleTest-based tests"
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  build_manual:
+    name: Manual ${{ inputs.mode }}
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -38,15 +47,24 @@ jobs:
             libgtest-dev
 
       - name: Configure
+        shell: bash
         run: |
-          cfg_flags=(--disable-nsdejavu --disable-desktopfiles --enable-gtest)
-          if [[ "${{ matrix.mode }}" == "x64-debug" ]]; then
+          mode='${{ inputs.mode }}'
+          run_tests='${{ inputs.run_tests }}'
+          enable_gtest='${{ inputs.enable_gtest }}'
+
+          cfg_flags=(--disable-nsdejavu --disable-desktopfiles)
+          if [[ "$mode" == "x64-debug" ]]; then
             cfg_flags+=(--enable-debug)
             export CXXFLAGS="-O0 -g3"
             export CFLAGS="-O0 -g3"
           else
             export CXXFLAGS="-O2 -DNDEBUG"
             export CFLAGS="-O2 -DNDEBUG"
+          fi
+
+          if [[ "$enable_gtest" == "true" ]]; then
+            cfg_flags+=(--enable-gtest)
           fi
 
           ./autogen.sh "${cfg_flags[@]}"
@@ -56,6 +74,7 @@ jobs:
           make -j"$(nproc)"
 
       - name: Test
+        if: ${{ inputs.run_tests }}
         run: |
           make -j"$(nproc)" check
 
@@ -63,7 +82,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: linux-test-logs-${{ matrix.mode }}
+          name: linux-manual-test-logs-${{ github.run_number }}
           path: |
             tests/test-suite.log
             tests/*.log
