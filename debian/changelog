@@ -1,3 +1,13 @@
+djvulibre (3.5.30-1) experimental; urgency=medium
+
+  * Version 3.5.30
+  * Complete migration to CMake 3.21+ build system
+  * Add GoogleTest-based unit test suite
+  * Fix integer-conversion and UTF-8 safety issues in libdjvu core
+  * Bump debhelper-compat to 13
+
+ -- Volodymyr Savchenko <volnsav@github>  Fri, 06 Mar 2026 12:00:00 +0200
+
 djvulibre (3.5.29-1) experimental; urgency=medium
   * version number change
 

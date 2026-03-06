@@ -1,18 +1,17 @@
 Source: djvulibre
 Section: libs
 Priority: optional
-Maintainer: Barak A. Pearlmutter <bap@debian.org>
-Uploaders: Leon Bottou <leonb@bottou.org>
-Build-Depends: cmake,
+Maintainer: Volodymyr Savchenko <volnsav@github>
+Build-Depends: debhelper-compat (= 13),
+	       cmake,
+	       ninja-build,
 	       pkg-config,
-	       debhelper (>= 11),
 	       libjpeg-dev,
-	       libtiff-dev,
-	       ninja-build
-Vcs-Git: https://salsa.debian.org/debian/djvulibre.git
-Vcs-Browser: https://salsa.debian.org/debian/djvulibre
-Homepage: http://djvu.sourceforge.net/
-Standards-Version: 4.1.4
+	       libtiff-dev
+Vcs-Git: https://github.com/volnsav/DjVuLibreExperimental.git
+Vcs-Browser: https://github.com/volnsav/DjVuLibreExperimental
+Homepage: https://github.com/volnsav/DjVuLibreExperimental
+Standards-Version: 4.6.2
 
 Package: libdjvulibre-dev
 Section: libdevel
