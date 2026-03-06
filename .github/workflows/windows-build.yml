@@ -1,6 +1,10 @@
 name: Windows Build
 
 on:
+  push:
+    branches:
+      - develop
+      - master
   pull_request:
   workflow_dispatch:
     inputs:
@@ -16,46 +20,19 @@ on:
 
 jobs:
   build_pr:
-    name: Release x64
-    if: ${{ github.event_name == 'pull_request' }}
+    name: ${{ matrix.config }} x64
+    if: ${{ github.event_name != 'workflow_dispatch' }}
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - Release
+          - Debug
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Detect MSVC toolset
-        id: toolset
-        shell: pwsh
-        run: |
-          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-          $base = $null
-          if (Test-Path $vswhere) {
-            $installPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
-            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($installPath)) {
-              $base = Join-Path $installPath "MSBuild\Microsoft\VC\v170\Platforms\x64\PlatformToolsets"
-            }
-          }
-          $toolset = ""
-          if ($base -and (Test-Path (Join-Path $base "v145\Toolset.props"))) {
-            $toolset = "v145"
-          } elseif ($base -and (Test-Path (Join-Path $base "v143\Toolset.props"))) {
-            $toolset = "v143"
-          } else {
-            # windows-latest always has v143; use as safe fallback when discovery path differs.
-            $toolset = "v143"
-          }
-
-          if ([string]::IsNullOrWhiteSpace($toolset)) {
-            Write-Error "Supported toolset not found (expected v145 or v143)."
-            exit 1
-          }
-
-          "value=$toolset" >> $env:GITHUB_OUTPUT
-          Write-Host "Using DjvuPlatformToolset=$toolset"
 
       - name: Prepare third-party sources (jpeg/zlib/tiff)
         shell: pwsh
@@ -105,38 +82,19 @@ jobs:
           }
           "VCPKG_ROOT=$vcpkgRoot" >> $env:GITHUB_ENV
 
-      - name: Build tests (Release x64)
+      - name: Run Windows test runner
         shell: pwsh
         run: |
-          msbuild windows\djvulibre\djvulibre.sln `
-            /m `
-            "/t:libdjvu_smoke_test;libdjvu_gtest" `
-            /p:Configuration=Release `
-            /p:Platform=x64 `
-            /p:PlatformToolset=${{ steps.toolset.outputs.value }} `
-            /p:DjvuPlatformToolset=${{ steps.toolset.outputs.value }} `
-            /p:VcpkgRoot=$env:VCPKG_ROOT `
-            /p:VcpkgTriplet=x64-windows
-
-      - name: Run smoke test
-        shell: pwsh
-        run: |
-          .\windows\build\Release\x64\libdjvu_smoke_test.exe
-
-      - name: Run gtest suite
-        shell: pwsh
-        run: |
-          $env:PATH = "$env:VCPKG_ROOT\installed\x64-windows\bin;$env:PATH"
-          .\windows\build\Release\x64\libdjvu_gtest.exe
+          .\run_windows_tests.ps1 -Configuration ${{ matrix.config }} -Platform x64 -Toolset auto
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: djvulibre-windows-Release-x64
+          name: djvulibre-windows-${{ matrix.config }}-x64
           path: |
-            windows/build/Release/x64/libdjvulibre.dll
-            windows/build/Release/x64/libdjvulibre.lib
-            windows/build/Release/x64/libjpeg.dll
+            windows/build/${{ matrix.config }}/x64/libdjvulibre.dll
+            windows/build/${{ matrix.config }}/x64/libdjvulibre.lib
+            windows/build/${{ matrix.config }}/x64/libjpeg.dll
           if-no-files-found: error
 
   build_manual:
@@ -171,41 +129,6 @@ jobs:
         if: ${{ steps.mode.outputs.run == 'true' }}
         uses: actions/checkout@v4
 
-      - name: Setup MSBuild
-        if: ${{ steps.mode.outputs.run == 'true' }}
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Detect MSVC toolset
-        if: ${{ steps.mode.outputs.run == 'true' }}
-        id: toolset
-        shell: pwsh
-        run: |
-          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-          $base = $null
-          if (Test-Path $vswhere) {
-            $installPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
-            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($installPath)) {
-              $base = Join-Path $installPath "MSBuild\Microsoft\VC\v170\Platforms\x64\PlatformToolsets"
-            }
-          }
-          $toolset = ""
-          if ($base -and (Test-Path (Join-Path $base "v145\Toolset.props"))) {
-            $toolset = "v145"
-          } elseif ($base -and (Test-Path (Join-Path $base "v143\Toolset.props"))) {
-            $toolset = "v143"
-          } else {
-            # windows-latest always has v143; use as safe fallback when discovery path differs.
-            $toolset = "v143"
-          }
-
-          if ([string]::IsNullOrWhiteSpace($toolset)) {
-            Write-Error "Supported toolset not found (expected v145 or v143)."
-            exit 1
-          }
-
-          "value=$toolset" >> $env:GITHUB_OUTPUT
-          Write-Host "Using DjvuPlatformToolset=$toolset"
-
       - name: Prepare third-party sources (jpeg/zlib/tiff)
         if: ${{ steps.mode.outputs.run == 'true' }}
         shell: pwsh
@@ -256,36 +179,11 @@ jobs:
           }
           "VCPKG_ROOT=$vcpkgRoot" >> $env:GITHUB_ENV
 
-      - name: Build tests (${{ matrix.config }} x64)
+      - name: Run Windows test runner
         if: ${{ steps.mode.outputs.run == 'true' }}
         shell: pwsh
         run: |
-          msbuild windows\djvulibre\djvulibre.sln `
-            /m `
-            "/t:libdjvu_smoke_test;libdjvu_gtest" `
-            /p:Configuration=${{ matrix.config }} `
-            /p:Platform=x64 `
-            /p:PlatformToolset=${{ steps.toolset.outputs.value }} `
-            /p:DjvuPlatformToolset=${{ steps.toolset.outputs.value }} `
-            /p:VcpkgRoot=$env:VCPKG_ROOT `
-            /p:VcpkgTriplet=x64-windows
-
-      - name: Run smoke test
-        if: ${{ steps.mode.outputs.run == 'true' }}
-        shell: pwsh
-        run: |
-          .\windows\build\${{ matrix.config }}\x64\libdjvu_smoke_test.exe
-
-      - name: Run gtest suite
-        if: ${{ steps.mode.outputs.run == 'true' }}
-        shell: pwsh
-        run: |
-          if ('${{ matrix.config }}' -eq 'Debug') {
-            $env:PATH = "$env:VCPKG_ROOT\installed\x64-windows\debug\bin;$env:PATH"
-          } else {
-            $env:PATH = "$env:VCPKG_ROOT\installed\x64-windows\bin;$env:PATH"
-          }
-          .\windows\build\${{ matrix.config }}\x64\libdjvu_gtest.exe
+          .\run_windows_tests.ps1 -Configuration ${{ matrix.config }} -Platform x64 -Toolset auto
 
       - name: Upload artifact
         if: ${{ steps.mode.outputs.run == 'true' }}

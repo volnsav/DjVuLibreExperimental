@@ -1,6 +1,10 @@
 name: Linux Build
 
 on:
+  push:
+    branches:
+      - develop
+      - master
   pull_request:
   workflow_dispatch:
     inputs:
@@ -25,9 +29,15 @@ on:
 
 jobs:
   build_pr:
-    name: Release x64 + tests
-    if: ${{ github.event_name == 'pull_request' }}
+    name: ${{ matrix.mode }} + tests
+    if: ${{ github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode:
+          - x64-release
+          - x64-debug
 
     steps:
       - name: Checkout
@@ -48,9 +58,19 @@ jobs:
             libtiff-dev \
             libgtest-dev
 
-      - name: Configure (Release, gtest enabled)
+      - name: Configure
         run: |
-          ./autogen.sh --disable-nsdejavu --disable-desktopfiles --enable-gtest
+          cfg_flags=(--disable-nsdejavu --disable-desktopfiles --enable-gtest)
+          if [[ "${{ matrix.mode }}" == "x64-debug" ]]; then
+            cfg_flags+=(--enable-debug)
+            export CXXFLAGS="-O0 -g3"
+            export CFLAGS="-O0 -g3"
+          else
+            export CXXFLAGS="-O2 -DNDEBUG"
+            export CFLAGS="-O2 -DNDEBUG"
+          fi
+
+          ./autogen.sh "${cfg_flags[@]}"
 
       - name: Build
         run: |
@@ -64,7 +84,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: linux-test-logs
+          name: linux-test-logs-${{ matrix.mode }}
           path: |
             tests/test-suite.log
             tests/*.log
