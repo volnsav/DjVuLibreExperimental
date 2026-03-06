@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(DjVuLibre VERSION 3.5.29 LANGUAGES C CXX)
+project(DjVuLibre VERSION 3.5.30 LANGUAGES C CXX)
 
 include(CheckCXXSourceCompiles)
 include(CheckFunctionExists)
