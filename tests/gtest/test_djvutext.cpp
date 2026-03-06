@@ -211,16 +211,16 @@ TEST(DjVuTextTest, ZoneNormalizeAndHelpersAreReachable)
   w2->text_length = 3;
 
   txt->normalize_text();
-  EXPECT_GT(txt->textUTF8.length(), 0);
+  EXPECT_GT(txt->textUTF8.length(), 0u);
 
   GUTF8String selected;
   GList<GRect> rects = txt->find_text_with_rect(GRect(0, 40, 60, 20), selected, 2);
-  EXPECT_GE(rects.size(), 0);
-  EXPECT_GE(selected.length(), 0);
+  EXPECT_GE(rects.size(), 0u);
+  EXPECT_GE(selected.length(), 0u);
 
   GUTF8String in_rect;
   GList<DjVuTXT::Zone *> zones = txt->find_text_in_rect(GRect(0, 0, 120, 80), in_rect);
-  EXPECT_GE(zones.size(), 0);
+  EXPECT_GE(zones.size(), 0u);
 }
 
 TEST(DjVuTextTest, ReferenceUnicodeFixtureDecodesRealOcrTextAndXml)
@@ -247,7 +247,7 @@ TEST(DjVuTextTest, ReferenceUnicodeFixtureDecodesRealOcrTextAndXml)
   ASSERT_TRUE(text != 0);
   EXPECT_NO_THROW(text->decode(text_bs));
   ASSERT_TRUE(text->txt != 0);
-  EXPECT_GT(text->txt->textUTF8.length(), 0);
+  EXPECT_GT(text->txt->textUTF8.length(), 0u);
   EXPECT_TRUE(ContainsNonAscii(text->txt->textUTF8));
 
   const GUTF8String xml = text->get_xmlText(800);
@@ -256,8 +256,8 @@ TEST(DjVuTextTest, ReferenceUnicodeFixtureDecodesRealOcrTextAndXml)
 
   GUTF8String selected;
   GList<DjVuTXT::Zone *> zones = text->txt->find_text_in_rect(GRect(0, 0, 2000, 2000), selected);
-  EXPECT_GE(zones.size(), 0);
-  EXPECT_GE(selected.length(), 0);
+  EXPECT_GE(zones.size(), 0u);
+  EXPECT_GE(selected.length(), 0u);
 }
 
 TEST(DjVuTextTest, ReferenceHiddenOnlyFixtureRoundtripPreservesDecodedText)
