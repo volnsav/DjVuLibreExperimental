@@ -72,13 +72,13 @@ TEST(DjVuAnnoTest, AntMergeCopyAndParamSerializationPaths)
   EXPECT_EQ(DjVuANT::ALIGN_BOTTOM, merged->ver_align);
 
   const GUTF8String raw = merged->encode_raw();
-  EXPECT_GT(raw.length(), 0);
+  EXPECT_GT(raw.length(), 0u);
   const GUTF8String params = merged->get_paramtags();
-  EXPECT_GT(params.length(), 0);
+  EXPECT_GT(params.length(), 0u);
 
   GP<ByteStream> out = ByteStream::create();
   merged->writeParam(*out);
-  EXPECT_GT(out->size(), 0);
+  EXPECT_GT(out->size(), 0L);
 
   GP<DjVuANT> cpy = merged->copy();
   ASSERT_TRUE(cpy != 0);
@@ -104,11 +104,11 @@ TEST(DjVuAnnoTest, ContainerMergeAndXmlHelpersAreReachable)
   const GUTF8String xml_map = left->get_xmlmap("page1.djvu", 100);
   const GUTF8String xml_param = left->get_paramtags();
   EXPECT_GE(xml_map.search("MAP"), 0);
-  EXPECT_GT(xml_param.length(), 0);
+  EXPECT_GT(xml_param.length(), 0u);
 
   GP<ByteStream> out = ByteStream::create();
   left->writeMap(*out, "page1.djvu", 100);
   left->writeParam(*out);
-  EXPECT_GT(out->size(), 0);
+  EXPECT_GT(out->size(), 0L);
   EXPECT_GT(left->get_memory_usage(), 0u);
 }

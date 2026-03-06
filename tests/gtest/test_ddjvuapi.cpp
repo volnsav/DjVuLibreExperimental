@@ -22,9 +22,7 @@
 #include "IW44Image.h"
 #include "miniexp.h"
 
-extern "C" {
 #include "ddjvuapi.h"
-}
 
 namespace {
 
