@@ -50,6 +50,35 @@ jobs:
           if-no-files-found: ignore
 
   # -----------------------------------------------------------------------
+  # Validate that the legacy autotools build still works (master only).
+  # Remove this job once the CMake branch is merged into master.
+  autotools:
+    name: Autotools (legacy validation)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf automake libtool pkg-config g++ make \
+            libjpeg-dev libtiff-dev zlib1g-dev
+
+      - name: Bootstrap
+        run: ./autogen.sh
+
+      - name: Configure
+        run: ./configure --prefix=/tmp/djvulibre-install
+
+      - name: Build
+        run: make -j$(nproc)
+
+      - name: Install
+        run: make install
+
+  # -----------------------------------------------------------------------
   windows:
     name: Windows ${{ matrix.config }}
     runs-on: windows-latest
