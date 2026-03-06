@@ -21,7 +21,7 @@ target_include_directories(
     "${CMAKE_SOURCE_DIR}/tools"
     "${CMAKE_BINARY_DIR}/generated")
 
-if(TIFF_FOUND)
+if(TARGET TIFF::TIFF)
   target_link_libraries(djvulibre_jb2cmp PRIVATE TIFF::TIFF)
 endif()
 
@@ -38,7 +38,7 @@ function(djvulibre_add_tool name)
   if(Threads_FOUND)
     target_link_libraries(${name} PRIVATE Threads::Threads)
   endif()
-  if(TIFF_FOUND AND (${name} STREQUAL "cjb2" OR ${name} STREQUAL "ddjvu"))
+  if(TARGET TIFF::TIFF AND (${name} STREQUAL "cjb2" OR ${name} STREQUAL "ddjvu"))
     target_link_libraries(${name} PRIVATE TIFF::TIFF)
   endif()
   djvulibre_set_output_dirs(${name})
@@ -65,7 +65,11 @@ djvulibre_add_tool(csepdjvu
                    jb2tune.h
                    common.h
                    $<TARGET_OBJECTS:djvulibre_jb2cmp>)
-djvulibre_add_tool(ddjvu ddjvu.cpp tiff2pdf.c tiff2pdf.h)
+if(WIN32)
+  djvulibre_add_tool(ddjvu ddjvu.cpp tiff2pdf.h)
+else()
+  djvulibre_add_tool(ddjvu ddjvu.cpp tiff2pdf.c tiff2pdf.h)
+endif()
 djvulibre_add_tool(djvm djvm.cpp common.h)
 djvulibre_add_tool(djvmcvt djvmcvt.cpp common.h)
 djvulibre_add_tool(djvudump djvudump.cpp common.h)

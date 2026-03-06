@@ -28,8 +28,10 @@
 #  include <tiffio.h>
 #  include <tiffconf.h>
 #  ifdef TIFFLIB_VERSION
+#   if !defined(_WIN32)
 #   if TIFFLIB_VERSION > 20041104
 #    define HAVE_TIFF2PDF 1
+#   endif
 #   endif
 #  endif
 # endif

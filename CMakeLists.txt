@@ -17,43 +17,28 @@ option(DJVULIBRE_ENABLE_DESKTOPFILES "Install desktop integration assets" ON)
 option(DJVULIBRE_ENABLE_GTEST "Build GoogleTest-based unit tests" OFF)
 option(DJVULIBRE_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 
+# On Windows, default to bundled (ExternalProject) builds of zlib,
+# libjpeg-turbo, and libtiff.  On Linux/macOS, default to system packages.
+if(WIN32)
+  option(DJVULIBRE_USE_BUNDLED_DEPS
+         "Build vendored third-party dependencies from source" ON)
+else()
+  option(DJVULIBRE_USE_BUNDLED_DEPS
+         "Build vendored third-party dependencies from source" OFF)
+endif()
+
 set(DJVULIBRE_THIRD_PARTY_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
     CACHE PATH
     "Root directory for optional third-party dependencies")
-set(DJVULIBRE_EXTRA_INCLUDE_DIRS
-    ""
-    CACHE STRING
-    "Additional include directories separated by semicolons")
-set(DJVULIBRE_EXTRA_LIBRARY_DIRS
-    ""
-    CACHE STRING
-    "Additional library directories separated by semicolons")
 
 set(BUILD_SHARED_LIBS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-if(EXISTS "${DJVULIBRE_THIRD_PARTY_DIR}")
-  list(PREPEND CMAKE_PREFIX_PATH
-       "${DJVULIBRE_THIRD_PARTY_DIR}"
-       "${DJVULIBRE_THIRD_PARTY_DIR}/install")
-endif()
-
-foreach(extra_dir IN LISTS DJVULIBRE_EXTRA_INCLUDE_DIRS)
-  if(IS_DIRECTORY "${extra_dir}")
-    list(APPEND CMAKE_REQUIRED_INCLUDES "${extra_dir}")
-    list(APPEND CMAKE_INCLUDE_PATH "${extra_dir}")
-  endif()
-endforeach()
-
-foreach(extra_dir IN LISTS DJVULIBRE_EXTRA_LIBRARY_DIRS)
-  if(IS_DIRECTORY "${extra_dir}")
-    list(APPEND CMAKE_LIBRARY_PATH "${extra_dir}")
-    link_directories("${extra_dir}")
-  endif()
-endforeach()
+include(cmake/DjVuThirdParty.cmake)
+djvulibre_configure_third_party()
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -83,8 +68,6 @@ set(DJVULIBRE_LIBRARY_VERSION
     "${DJVULIBRE_SOVERSION}.${DJVULIBRE_LT_REV}.${DJVULIBRE_LT_AGE}")
 
 find_package(Threads)
-find_package(JPEG)
-find_package(TIFF)
 
 set(CMAKE_REQUIRED_LIBRARIES "")
 if(CMAKE_THREAD_LIBS_INIT)
@@ -165,13 +148,13 @@ else()
   set(HAVE_PTHREAD 0)
 endif()
 
-if(JPEG_FOUND)
+if(TARGET JPEG::JPEG)
   set(HAVE_JPEG 1)
 else()
   set(HAVE_JPEG 0)
 endif()
 
-if(TIFF_FOUND)
+if(TARGET TIFF::TIFF)
   set(HAVE_TIFF 1)
 else()
   set(HAVE_TIFF 0)
@@ -255,14 +238,14 @@ endif()
 if(CMAKE_THREAD_LIBS_INIT)
   string(APPEND DJVULIBRE_PC_LIBS_PRIVATE " ${CMAKE_THREAD_LIBS_INIT}")
 endif()
-if(JPEG_FOUND)
-  if(JPEG_LIBRARIES)
-    foreach(jpeg_lib IN LISTS JPEG_LIBRARIES)
-      string(APPEND DJVULIBRE_PC_LIBS_PRIVATE " ${jpeg_lib}")
-    endforeach()
-  else()
-    string(APPEND DJVULIBRE_PC_LIBS_PRIVATE " -ljpeg")
-  endif()
+if(TARGET JPEG::JPEG)
+  string(APPEND DJVULIBRE_PC_LIBS_PRIVATE " -ljpeg")
+endif()
+if(TARGET TIFF::TIFF)
+  string(APPEND DJVULIBRE_PC_LIBS_PRIVATE " -ltiff")
+endif()
+if(TARGET ZLIB::ZLIB)
+  string(APPEND DJVULIBRE_PC_LIBS_PRIVATE " -lz")
 endif()
 string(STRIP "${DJVULIBRE_PC_LIBS_PRIVATE}" DJVULIBRE_PC_LIBS_PRIVATE)
 

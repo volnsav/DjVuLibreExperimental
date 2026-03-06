@@ -123,24 +123,35 @@ target_include_directories(
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
   PRIVATE
-    "${CMAKE_CURRENT_BINARY_DIR}"
-    "${CMAKE_CURRENT_BINARY_DIR}/../generated"
     "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${CMAKE_SOURCE_DIR}"
     "${CMAKE_BINARY_DIR}/generated")
 
 target_compile_definitions(djvulibre PRIVATE DIR_DATADIR="${CMAKE_INSTALL_FULL_DATADIR}")
 
 if(WIN32)
-  target_compile_definitions(djvulibre PRIVATE DJVUAPI_EXPORT DDJVUAPI_EXPORT MINILISPAPI_EXPORT)
+  target_compile_definitions(
+    djvulibre
+    PRIVATE
+      DJVUAPI_EXPORT
+      DDJVUAPI_EXPORT
+      MINILISPAPI_EXPORT
+      _CRT_SECURE_NO_WARNINGS)
   set_target_properties(djvulibre PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
-if(JPEG_FOUND)
+if(TARGET JPEG::JPEG)
   target_link_libraries(djvulibre PRIVATE JPEG::JPEG)
 endif()
 
-if(Threads_FOUND)
+if(TARGET ZLIB::ZLIB)
+  target_link_libraries(djvulibre PRIVATE ZLIB::ZLIB)
+endif()
+
+if(TARGET TIFF::TIFF)
+  target_link_libraries(djvulibre PRIVATE TIFF::TIFF)
+endif()
+
+if(TARGET Threads::Threads)
   target_link_libraries(djvulibre PRIVATE Threads::Threads)
 endif()
 
@@ -153,6 +164,16 @@ if(APPLE)
   if(COREFOUNDATION_FRAMEWORK)
     target_link_libraries(djvulibre PRIVATE "${COREFOUNDATION_FRAMEWORK}")
   endif()
+endif()
+
+if(TARGET libjpeg_turbo_ep)
+  add_dependencies(djvulibre libjpeg_turbo_ep)
+endif()
+if(TARGET zlib_ep)
+  add_dependencies(djvulibre zlib_ep)
+endif()
+if(TARGET tiff_ep)
+  add_dependencies(djvulibre tiff_ep)
 endif()
 
 set_target_properties(
@@ -176,3 +197,4 @@ install(TARGETS djvulibre
 
 install(FILES ${DJVULIBRE_PUBLIC_HEADERS}
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/libdjvu")
+        

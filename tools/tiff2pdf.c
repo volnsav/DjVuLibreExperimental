@@ -59,7 +59,7 @@
 #include <errno.h>
 #include <limits.h>
 
-#if HAVE_UNISTD_H
+#if HAVE_UNISTD_H && !defined(_WIN32)
 # include <unistd.h>
 #endif
 
@@ -89,7 +89,7 @@
 # define TIFFclip(A,B) ((A)<(0)?(0):((A)>(B)?(B):(A)))
 #endif
 
-#ifdef HAVE_GETOPT_H
+#if defined(HAVE_GETOPT_H) && HAVE_GETOPT_H && !defined(_WIN32)
 # include <getopt.h>
 #endif
 
@@ -5684,4 +5684,3 @@ tsize_t t2p_write_pdf(T2P* t2p, TIFF* input, TIFF* output){
  */
 
 #endif
-

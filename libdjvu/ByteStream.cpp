@@ -83,10 +83,10 @@
 # include <CoreFoundation/CFString.h>
 #endif
 
-#ifdef UNIX
-# ifndef HAS_MEMMAP
-#  define HAS_MEMMAP 1
-# endif
+#if defined(UNIX) && defined(HAVE_MMAP) && HAVE_MMAP && defined(HAVE_SYS_MMAN_H) && HAVE_SYS_MMAN_H
+# define DJVU_USE_MEMMAP 1
+#else
+# define DJVU_USE_MEMMAP 0
 #endif
 
 #ifdef UNIX
@@ -94,7 +94,7 @@
 # include <sys/stat.h>
 # include <unistd.h>
 # include <errno.h>
-# ifdef HAS_MEMMAP
+# if DJVU_USE_MEMMAP
 #  include <sys/mman.h>
 # endif
 #endif
@@ -307,7 +307,7 @@ ByteStream::Static::size(void) const
   return bsize;
 }
 
-#if HAS_MEMMAP
+#if DJVU_USE_MEMMAP
 /** Read-only ByteStream interface to a memmap area.
     Class #MemoryMapByteStream# implements a read-only ByteStream interface
     for a memory map to a file. */
@@ -1074,7 +1074,7 @@ ByteStream::create(const GURL &url,char const * const xmode)
       int fd = urlopen(url,O_RDONLY,0777);
       if (fd >= 0)
         {
-#if HAS_MEMMAP && defined(S_IFREG)
+#if DJVU_USE_MEMMAP && defined(S_IFREG)
           struct stat buf;
           if ( (fstat(fd, &buf) >= 0) && (buf.st_mode & S_IFREG) )
             {
@@ -1132,7 +1132,7 @@ ByteStream::create(const int fd,char const * const mode,const bool closeme)
 {
   GP<ByteStream> retval;
   const char *default_mode="rb";
-#if HAS_MEMMAP
+#if DJVU_USE_MEMMAP
   if (   (!mode&&(fd!=0)&&(fd!=1)&&(fd!=2)) 
       || (mode&&(GUTF8String("rb") == mode)))
   {
@@ -1196,7 +1196,7 @@ GP<ByteStream>
 ByteStream::create(FILE * const f,char const * const mode,const bool closeme)
 {
   GP<ByteStream> retval;
-#if HAS_MEMMAP
+#if DJVU_USE_MEMMAP
   if (!mode || (GUTF8String("rb") == mode))
   {
     MemoryMapByteStream *rb=new MemoryMapByteStream();
@@ -1230,7 +1230,7 @@ ByteStream::create_static(const void * buffer, size_t sz)
   return new Static(buffer, sz);
 }
 
-#if HAS_MEMMAP
+#if DJVU_USE_MEMMAP
 MemoryMapByteStream::MemoryMapByteStream(void)
 : ByteStream::Static(0,0)
 {}

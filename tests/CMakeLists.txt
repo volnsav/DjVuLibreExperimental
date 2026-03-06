@@ -21,8 +21,18 @@ if(DJVULIBRE_ENABLE_GTEST)
                      "${CMAKE_BINARY_DIR}/third_party/googletest")
     set(DJVULIBRE_GTEST_TARGET GTest::gtest)
   else()
-    find_package(GTest REQUIRED)
-    set(DJVULIBRE_GTEST_TARGET GTest::gtest)
+    find_package(GTest QUIET)
+    if(GTest_FOUND OR TARGET GTest::gtest)
+      set(DJVULIBRE_GTEST_TARGET GTest::gtest)
+    else()
+      # Download GoogleTest when no system or vendored copy is available
+      include(FetchContent)
+      FetchContent_Declare(googletest
+        URL "https://github.com/google/googletest/releases/download/v1.17.0/googletest-1.17.0.tar.gz"
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+      FetchContent_MakeAvailable(googletest)
+      set(DJVULIBRE_GTEST_TARGET GTest::gtest)
+    endif()
   endif()
 
   set(DJVULIBRE_GTEST_SOURCES

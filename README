@@ -73,7 +73,7 @@ Windows
 
 Windows support is CMake-first and targets Visual Studio 2019 or newer.
 Third-party integration is expected to live under `third_party/`, with
-`third_party/vcpkg` as the default package manager checkout.
+vendored source trees as the default Windows dependency source.
 
 Typical PowerShell flow:
 
@@ -83,9 +83,9 @@ Typical PowerShell flow:
 
 That script will:
 
-- detect Visual Studio 2019/2022
-- prepare `third_party\vcpkg` if needed
-- install `libjpeg-turbo`, `tiff`, and `gtest`
+- detect a supported Visual Studio generator
+- build vendored `zlib`, `libjpeg-turbo`, and `libtiff`
+- use vendored `googletest` sources for the gtest target
 - configure a Visual Studio CMake build
 - build the library, tools, and tests
 - run `ctest`
@@ -93,11 +93,17 @@ That script will:
 Manual CMake example:
 
 ```powershell
+cmake -S third_party\zlib -B build-windows\third_party\zlib `
+  -G "Visual Studio 17 2022" `
+  -A x64 `
+  -DCMAKE_INSTALL_PREFIX="$PWD\\third_party\\install\\x64\\Release"
+cmake --build build-windows\third_party\zlib --config Release
+cmake --install build-windows\third_party\zlib --config Release
+
 cmake -S . -B build-windows `
   -G "Visual Studio 17 2022" `
   -A x64 `
-  -DCMAKE_TOOLCHAIN_FILE="$PWD\\third_party\\vcpkg\\scripts\\buildsystems\\vcpkg.cmake" `
-  -DVCPKG_TARGET_TRIPLET=x64-windows `
+  -DCMAKE_PREFIX_PATH="$PWD\\third_party\\install\\x64\\Release" `
   -DDJVULIBRE_ENABLE_GTEST=ON
 cmake --build build-windows --config Release
 ctest --test-dir build-windows -C Release --output-on-failure

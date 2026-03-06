@@ -65,7 +65,13 @@
 #include <stddef.h>
 #include <limits.h>
 
-#if HAS_ICONV
+#if !defined(_WIN32) && defined(HAVE_ICONV) && HAVE_ICONV && defined(HAVE_ICONV_H) && HAVE_ICONV_H
+# define DJVU_USE_ICONV 1
+#else
+# define DJVU_USE_ICONV 0
+#endif
+
+#if DJVU_USE_ICONV
 #include <iconv.h>
 #endif
 
@@ -285,7 +291,7 @@ GStringRep::Unicode::create(
   return retval;
 }
 
-#if HAS_ICONV
+#if DJVU_USE_ICONV
 /* This template works around incompatible iconv protoypes */
 template<typename _T> inline size_t 
 iconv_adaptor(size_t(*iconv_func)(iconv_t, _T, size_t *, char**, size_t*),
@@ -323,7 +329,7 @@ GStringRep::Unicode::create(
     retval=create(xbuf,bufsize,XUCS4);
   }else
   {
-#if HAS_ICONV
+#if DJVU_USE_ICONV
     EncodeType t=XOTHER;
     void const * const buf=checkmarks(xbuf,bufsize,t); 
     if(t != XOTHER)
