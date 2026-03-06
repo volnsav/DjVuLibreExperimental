@@ -79,6 +79,76 @@ jobs:
         run: make install
 
   # -----------------------------------------------------------------------
+  linux-arm64:
+    name: Linux ARM64 ${{ matrix.build_type }}
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Release, Debug]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build pkg-config g++ \
+            libjpeg-dev libtiff-dev zlib1g-dev libgtest-dev
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DDJVULIBRE_USE_BUNDLED_DEPS=OFF
+          -DDJVULIBRE_ENABLE_GTEST=ON
+          -DDJVULIBRE_ENABLE_XMLTOOLS=ON
+          -DDJVULIBRE_ENABLE_DESKTOPFILES=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-${{ matrix.build_type }}-logs
+          path: build/Testing/
+          if-no-files-found: ignore
+
+  # -----------------------------------------------------------------------
+  # ARM64 validation of the legacy autotools build.
+  autotools-arm64:
+    name: Autotools ARM64 (legacy validation)
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf automake libtool pkg-config g++ make \
+            libjpeg-dev libtiff-dev zlib1g-dev
+
+      - name: Bootstrap
+        run: ./autogen.sh
+
+      - name: Configure
+        run: ./configure --prefix=/tmp/djvulibre-install
+
+      - name: Build
+        run: make -j$(nproc)
+
+      - name: Install
+        run: make install
+
+  # -----------------------------------------------------------------------
   windows:
     name: Windows ${{ matrix.config }}
     runs-on: windows-latest
