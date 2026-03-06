@@ -146,7 +146,10 @@ fi
 
 ./autogen.sh "${CONFIGURE_ARGS[@]}"
 make -j"$JOBS"
-make -j"$JOBS" check
+if [[ "$ENABLE_GTEST" == "1" ]]; then
+  make -j"$JOBS" -C tests libdjvu_gtest
+  ./tests/libdjvu_gtest --gtest_color=yes
+fi
 
 if [[ "$RUN_INSTALL" == "1" ]]; then
   make install

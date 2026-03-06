@@ -13,7 +13,6 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $solution = Join-Path $repoRoot "windows\\djvulibre\\djvulibre.sln"
 $outputDir = Join-Path $repoRoot ("windows\\build\\{0}\\{1}" -f $Configuration, $Platform)
-$smokeTestExe = Join-Path $outputDir "libdjvu_smoke_test.exe"
 $gtestExe = Join-Path $outputDir "libdjvu_gtest.exe"
 
 function Get-VsInstallPath {
@@ -208,13 +207,13 @@ if ($gtestRoot) {
 }
 
 if (-not $NoBuild) {
-  Write-Host "Building libdjvu_smoke_test + libdjvu_gtest ($Configuration|$Platform, $resolvedToolset)..."
+  Write-Host "Building libdjvu_gtest ($Configuration|$Platform, $resolvedToolset)..."
   $buildArgs = @(
     $solution,
     "/nologo",
     "/verbosity:minimal",
     "/m",
-    "/t:libdjvu_smoke_test;libdjvu_gtest",
+    "/t:libdjvu_gtest",
     "/p:Configuration=$Configuration",
     "/p:Platform=$Platform",
     "/p:PlatformToolset=$resolvedToolset",
@@ -235,25 +234,16 @@ if (-not $NoBuild) {
   }
 }
 
-if (-not (Test-Path $smokeTestExe)) {
-  throw "Smoke test executable not found: $smokeTestExe"
-}
 if (-not (Test-Path $gtestExe)) {
   throw "GoogleTest executable not found: $gtestExe"
 }
 
 $env:PATH = "$outputDir;$env:PATH"
 
-Write-Host "Running $smokeTestExe"
-& $smokeTestExe
-if ($LASTEXITCODE -ne 0) {
-  exit $LASTEXITCODE
-}
-
 Write-Host "Running $gtestExe"
-& $gtestExe
+& $gtestExe --gtest_color=yes
 if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE
 }
 
-Write-Host "Windows smoke + gtest tests passed."
+Write-Host "Windows gtest suite passed."

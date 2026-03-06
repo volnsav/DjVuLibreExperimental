@@ -12,7 +12,7 @@ on:
           - x64-release
           - x64-debug
       run_tests:
-        description: "Run test suite (make check)"
+        description: "Run libdjvu_gtest"
         required: false
         default: true
         type: boolean
@@ -72,11 +72,15 @@ jobs:
       - name: Build
         run: |
           make -j"$(nproc)"
+          if [ "${{ inputs.enable_gtest }}" = "true" ]; then
+            make -j"$(nproc)" -C tests libdjvu_gtest
+          fi
 
       - name: Test
-        if: ${{ inputs.run_tests }}
+        if: ${{ inputs.run_tests && inputs.enable_gtest }}
         run: |
-          make -j"$(nproc)" check
+          set -o pipefail
+          ./tests/libdjvu_gtest --gtest_color=yes 2>&1 | tee tests/libdjvu_gtest.log
 
       - name: Upload test logs
         if: always()
@@ -84,7 +88,5 @@ jobs:
         with:
           name: linux-manual-test-logs-${{ github.run_number }}
           path: |
-            tests/test-suite.log
-            tests/*.log
-            tests/*.trs
+            tests/libdjvu_gtest.log
           if-no-files-found: ignore

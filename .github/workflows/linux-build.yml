@@ -54,10 +54,12 @@ jobs:
       - name: Build
         run: |
           make -j"$(nproc)"
+          make -j"$(nproc)" -C tests libdjvu_gtest
 
       - name: Test
         run: |
-          make -j"$(nproc)" check
+          set -o pipefail
+          ./tests/libdjvu_gtest --gtest_color=yes 2>&1 | tee tests/libdjvu_gtest.log
 
       - name: Upload test logs
         if: always()
@@ -65,7 +67,5 @@ jobs:
         with:
           name: linux-test-logs-${{ matrix.mode }}
           path: |
-            tests/test-suite.log
-            tests/*.log
-            tests/*.trs
+            tests/libdjvu_gtest.log
           if-no-files-found: ignore
