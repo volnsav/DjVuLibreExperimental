@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # -----------------------------------------------------------------------
+  linux:
+    name: Linux ${{ matrix.build_type }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Release, Debug]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build pkg-config g++ \
+            libjpeg-dev libtiff-dev zlib1g-dev libgtest-dev
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DDJVULIBRE_USE_BUNDLED_DEPS=OFF
+          -DDJVULIBRE_ENABLE_GTEST=ON
+          -DDJVULIBRE_ENABLE_XMLTOOLS=ON
+          -DDJVULIBRE_ENABLE_DESKTOPFILES=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.build_type }}-logs
+          path: build/Testing/
+          if-no-files-found: ignore
+
+  # -----------------------------------------------------------------------
+  windows:
+    name: Windows ${{ matrix.config }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Release, Debug]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DDJVULIBRE_USE_BUNDLED_DEPS=ON
+          -DDJVULIBRE_ENABLE_GTEST=ON
+          -DDJVULIBRE_ENABLE_XMLTOOLS=ON
+          -DDJVULIBRE_ENABLE_DESKTOPFILES=OFF
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.config }} --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
+
+      - name: Upload binaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.config }}-binaries
+          path: |
+            build/bin/${{ matrix.config }}/*.dll
+            build/bin/${{ matrix.config }}/*.exe
+            build/lib/${{ matrix.config }}/*.lib
+          if-no-files-found: ignore
