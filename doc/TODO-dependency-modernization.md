@@ -11,8 +11,8 @@ Core rule: **tests first, dependency updates second**.
 
 ## Scope
 
-- Windows build chain under `windows/djvulibre/*`
-- Linux/autotools build path (`autogen.sh`, `configure.ac`, `Makefile.am`)
+- Windows build chain through CMake + `third_party/vcpkg`
+- Linux/macOS build path through CMake + Ninja
 - CI verification (Linux + Windows)
 
 ## Priority Order
@@ -26,20 +26,20 @@ Core rule: **tests first, dependency updates second**.
 
 ### zlib
 
-- Current legacy source: `zlib-1.2.13` snapshot in Windows flow.
+- Current Windows path: transitively supplied through `vcpkg` and `tiff`.
 - Target variant: upstream `zlib` latest stable (major 1.x).
 - Notes: usually low-risk API compatibility.
 
 ### JPEG
 
-- Current legacy source: IJG `jpeg-6b`.
+- Current Windows path: `libjpeg-turbo` via `vcpkg`.
 - Preferred target variant: `libjpeg-turbo` (modern, actively maintained,
   libjpeg-compatible API).
 - Fallback variant: newer IJG libjpeg (only if turbo path is blocked).
 
 ### TIFF
 
-- Current legacy source: `tiff-4.0.10`.
+- Current Windows path: `tiff` via `vcpkg`.
 - Target variant: modern `libtiff` 4.x stable.
 - Risk notes:
   - many deprecation warnings (`uint16/uint32` style types),
@@ -48,7 +48,7 @@ Core rule: **tests first, dependency updates second**.
 
 ## Test/Quality Gate Before Any Update
 
-- `make check` on Linux must pass (including optional gtest mode).
+- `ctest --output-on-failure` on Linux must pass.
 - Windows x64 Release build must pass.
 - For dependency PRs: no increase in warning count in touched areas unless
   explicitly justified.
@@ -80,4 +80,3 @@ Core rule: **tests first, dependency updates second**.
 - Keep vendored third-party archives in-repo vs fetch during CI?
 - Pin exact versions in-tree vs follow package manager versions?
 - Add dedicated warning-baseline report for dependency migration PRs?
-

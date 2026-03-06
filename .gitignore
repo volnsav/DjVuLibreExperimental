@@ -59,6 +59,15 @@
 /xmltools/djvuxml.1
 /xmltools/djvuxmlparser
 /windows/build/
+/build/
+/build-*/
+/build-cmake/
+/build-debian/
+/build-windows/
+/_install/
+/_wsl-prefix/
+/third_party/vcpkg/
+/third_party/vcpkg_installed/
 Makefile
 Makefile.in
 stamp-h1

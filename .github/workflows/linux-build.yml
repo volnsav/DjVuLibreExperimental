@@ -26,46 +26,40 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            autoconf \
-            automake \
-            libtool \
+            cmake \
+            ninja-build \
             pkg-config \
             g++ \
-            make \
             libjpeg-dev \
-            zlib1g-dev \
             libtiff-dev \
+            zlib1g-dev \
             libgtest-dev
 
       - name: Configure
         run: |
-          cfg_flags=(--disable-nsdejavu --disable-desktopfiles --enable-gtest)
+          build_type=Release
           if [[ "${{ matrix.mode }}" == "x64-debug" ]]; then
-            cfg_flags+=(--enable-debug)
-            export CXXFLAGS="-O0 -g3"
-            export CFLAGS="-O0 -g3"
-          else
-            export CXXFLAGS="-O2 -DNDEBUG"
-            export CFLAGS="-O2 -DNDEBUG"
+            build_type=Debug
           fi
 
-          ./autogen.sh "${cfg_flags[@]}"
+          cmake -S . -B build-ci -G Ninja \
+            -DCMAKE_BUILD_TYPE="${build_type}" \
+            -DDJVULIBRE_ENABLE_GTEST=ON \
+            -DDJVULIBRE_ENABLE_XMLTOOLS=ON \
+            -DDJVULIBRE_ENABLE_DESKTOPFILES=OFF
 
       - name: Build
-        run: |
-          make -j"$(nproc)"
-          make -j"$(nproc)" -C tests libdjvu_gtest
+        run: cmake --build build-ci --parallel
 
       - name: Test
         run: |
           set -o pipefail
-          ./tests/libdjvu_gtest --gtest_color=yes 2>&1 | tee tests/libdjvu_gtest.log
+          ctest --test-dir build-ci --output-on-failure 2>&1 | tee build-ci/ctest.log
 
       - name: Upload test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: linux-test-logs-${{ matrix.mode }}
-          path: |
-            tests/libdjvu_gtest.log
+          path: build-ci/ctest.log
           if-no-files-found: ignore

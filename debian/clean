@@ -1,3 +1,5 @@
-xmltools/.libs/djvutoxml
-xmltools/.libs/djvuxmlparser
-gui/djview/.libs/djview
+build
+build-*
+build-cmake
+build-debian
+build-windows

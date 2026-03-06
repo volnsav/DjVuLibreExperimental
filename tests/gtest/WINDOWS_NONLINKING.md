@@ -2,7 +2,10 @@
 
 Last updated: 2026-03-06
 
-These classes/packages currently fail at link stage in the Windows gtest binary (`libdjvu_gtest.exe`) due to unresolved externals (DLL export/symbol visibility mismatch). Keep them in the Linux backlog first.
+These classes/packages currently fail at link stage in the Windows CMake gtest
+binary (`libdjvu_gtest.exe`) due to unresolved externals and incomplete DLL
+export coverage. They stay enabled on Linux and are temporarily excluded from
+the Windows target list in `tests/CMakeLists.txt`.
 
 ## Non-linking on Windows (current)
 
@@ -23,6 +26,9 @@ These classes/packages currently fail at link stage in the Windows gtest binary 
 
 ## Notes
 
-- Source files are present in `windows/djvulibre/libdjvulibre/libdjvulibre.vcxproj`, but symbols used by tests are not link-resolved from `libdjvulibre.dll` in current Windows setup.
-- These tests are excluded only from the Windows MSVC gtest project. They remain part of the Linux/autotools test set.
-- Practical workflow: implement/expand tests for these packages under Linux build first, then return to Windows after export/link cleanup.
+- The library now builds through CMake; there is no separate MSBuild project to
+  maintain for these exclusions.
+- These tests are excluded only from the Windows gtest target. They remain part
+  of the Linux and WSL CMake test set.
+- Practical workflow: extend tests under Linux first, then return to Windows
+  after export/link cleanup.

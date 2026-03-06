@@ -1,271 +1,157 @@
+DjVuLibre
+=========
 
-1- WHAT IS DJVU.
-================
+DjVuLibre is the reference C++ library and command-line toolset for the DjVu
+document format. This repository contains only the library, command-line
+utilities, XML tools, tests, and packaging metadata.
 
-DjVu (pronounced "déjà vu") a set of compression technologies, a file format,
-and a software platform for the delivery over the Web of digital documents,
-scanned documents, and high resolution images.
+`DjView` is not part of this repository. The Qt-based viewer lives in a
+separate repository and should be built and packaged independently.
 
-DjVu documents download and display extremely quickly, and look exactly the
-same on all platforms. DjVu can be seen as superior alternative to PDF and
-Postscript for digital documents, to TIFF (and PDF) for scanned documents, to
-JPEG for photographs and pictures, and to GIF for large palettized
-images. DjVu is the only Web format that is practical for distributing
-high-resolution scanned documents in color. No other format comes close.
 
-Typical DjVu file sizes are as follows: 
+Contents
+========
 
-- Bitonal scanned documents: 
-        5 to 30KB per page at 300dpi, 
-        3 to 10 times smaller than PDF or TIFF.
+This repository builds:
 
-- Color scanned documents: 
-           30 to 100KB per page at 300dpi,
-           5 to 10 times smaller than JPEG.
+- `libdjvulibre`
+- command-line tools under `tools/`
+- XML utilities under `xmltools/`
+- smoke and GoogleTest-based library tests
 
-- Photos:
-        2 times smaller than JPEG, 
-        about the same as JPEG-2000. 
 
-- Palettized images: 
-        2 times smaller than GIF,
-        up to 10 times if there is text.
+Build System
+============
 
-DjVu is used by hundreds of commercial, governmental, and non-commercial web
-sites around the world to distribute scanned documents, digital documents, and
-high-resolution photos.
+The project uses CMake only.
 
-Demos, and general information about DjVu can be found at 
-http://www.djvuzone.org, or at http://www.lizardtech.com. 
+Minimum toolchain:
 
-DjVu was originally developed at AT&T Labs-Research. AT&T sold DjVu to
-LizardTech Inc. in March 2000.
+- CMake 3.21+
+- a C++17-capable compiler
+- `libjpeg`
+- `libtiff`
+- optional: GoogleTest for the extended unit test suite
 
+On Linux, `pkg-config`, `cmake`, `ninja-build`, `libjpeg-dev`, `libtiff-dev`,
+and `libgtest-dev` are the normal package names on Debian/Ubuntu.
 
 
-2- WHAT IS DJVULIBRE? 
-=====================
+Linux And macOS
+===============
 
-In an effort to promote DjVu as a Web standard, LizardTech's management was
-enlightened enough to release the reference implementation of DjVu under the
-GNU GPL in October 2000. DjVuLibre (pronounced like the French "déjà vu
-libre"), is an enhanced version of that code maintained by the original
-inventors of DjVu. It is compatible with LizardTech's DjVu software v3.5.
+Typical out-of-tree build:
 
-This package includes: 
+```bash
+cmake -S . -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DDJVULIBRE_ENABLE_GTEST=ON \
+  -DDJVULIBRE_ENABLE_DESKTOPFILES=OFF
+cmake --build build
+ctest --test-dir build --output-on-failure
+cmake --install build --prefix /usr/local
+```
 
-- An up-to-date version of the C++ DjVu Reference Library 
-- A full-fledged wavelet-based compressor for pictures. 
-- A simple compressor for bitonal (black and white) scanned pages. 
-- A compressor for palettized images (a la GIF). 
-- A full set of utilities to manipulate and assemble DjVu images and documents. 
-- A set of decoders to convert DjVu to a number of other formats. 
+Useful CMake options:
 
-The full-fledged DjVu file viewer and browser plugin DjView4
-is available as a separate package.
+- `-DDJVULIBRE_ENABLE_GTEST=ON` builds `libdjvu_gtest`
+- `-DDJVULIBRE_ENABLE_XMLTOOLS=OFF` disables XML utilities
+- `-DDJVULIBRE_ENABLE_DESKTOPFILES=OFF` skips desktop integration assets
+- `-DDJVULIBRE_THIRD_PARTY_DIR=/path/to/third_party` adds an explicit third-party root
+- `-DDJVULIBRE_EXTRA_INCLUDE_DIRS=/path/a;/path/b`
+- `-DDJVULIBRE_EXTRA_LIBRARY_DIRS=/path/a;/path/b`
 
+For WSL there is a helper script:
 
+```bash
+./scripts/bootstrap_wsl.sh --enable-gtest --run-install
+```
 
-3- BUILDING DJVULIBRE
-=====================
 
-3.1- PREREQUISITES
-------------------
+Windows
+=======
 
-DjVuLibre-3.5 relies on various components available from the web.  
-Most recent Linux distribution already come with these.  
-You can also download and compile them if you wish.
-Be sure to read the system specific notes 
-at the end of this file.
+Windows support is CMake-first and targets Visual Studio 2019 or newer.
+Third-party integration is expected to live under `third_party/`, with
+`third_party/vcpkg` as the default package manager checkout.
 
-COMPILER --
-Development is done with the GCC g++ compiler, which is therefore
-recommended for all platforms.  The CLANG compiler has been tried and
-seems to work, but its output has not been seriously tested.
+Typical PowerShell flow:
 
-LIBJPEG/LIBTIFF --
-A small number of DjVu files internally use JPEG encoding instead 
-of IW44 wavelet encoding.  These files are processed using either 
-version 6a or 6b of the IJG libjpeg library <http://www.ijg.org>.  
-Some utility programs are able to read TIFF files. These programs
-rely on the LIBTIFF library <http://libtiff.org>.
-You can also compile DjVuLibre with neither JPEG nor TIFF support.  
-You might never notice the difference.
+```powershell
+.\scripts\run_windows_tests.ps1 -Configuration Debug -Platform x64
+```
 
+That script will:
 
-3.2 - CONFIGURE
----------------
+- detect Visual Studio 2019/2022
+- prepare `third_party\vcpkg` if needed
+- install `libjpeg-turbo`, `tiff`, and `gtest`
+- configure a Visual Studio CMake build
+- build the library, tools, and tests
+- run `ctest`
 
-Chances are that everything will work by simply running 
-commands "./configure", "make" and "make install".
+Manual CMake example:
 
-Note that there will be no configure file if you obtain the djvulibre 
-source using git clone. Instead there is a script 'autogen.sh' that 
-uses automake to generate and call the actual configure script.
-Since all autogen.sh arguments will be passed to configure,
-you can simply treat autogen.sh as a replacement for configure.
+```powershell
+cmake -S . -B build-windows `
+  -G "Visual Studio 17 2022" `
+  -A x64 `
+  -DCMAKE_TOOLCHAIN_FILE="$PWD\\third_party\\vcpkg\\scripts\\buildsystems\\vcpkg.cmake" `
+  -DVCPKG_TARGET_TRIPLET=x64-windows `
+  -DDJVULIBRE_ENABLE_GTEST=ON
+cmake --build build-windows --config Release
+ctest --test-dir build-windows -C Release --output-on-failure
+```
 
-Various options and environment variables affect the execution of the
-configuration script.  A complete list can be obtained by typing 
-"configure --help".  Also see the INSTALL file for further details.
-Here are the most important ones.
+Installer and archive packages are generated through CPack. On Windows the
+intended outputs are:
 
-* Option "--prefix=PREFIXDIR"
-  This option specifies where the DjVuLibre software will be installed.
-  The default prefix is /usr/local.  
+- `ZIP` for portable artifacts
+- `NSIS` for a normal installer
 
-* Option "--enable-desktopfiles[=(yes|no)]"
-  Installs icon and mime type files in the customary xdg directories.
-  The default is "yes".
+Example:
 
-* Option "--with-jpeg=JPEGDIR"
-  This option specifies a directory where the JPEG library has been
-  compiled. This directory contains both the include files and the 
-  library.  Without this option, the configuration script will search 
-  the JPEG library in standard places.
-  When everything else fails, you can simply define the environment
-  variables JPEG_CFLAGS and JPEG_LIBS.
+```powershell
+cd build-windows
+cpack -C Release -G ZIP
+cpack -C Release -G NSIS
+```
 
-* Option "--with-tiff=TIFFDIR"
-  This option specifies a directory where the LIBTIFF library has been
-  compiled. This directory contains both the include files and the 
-  library.  Without this option, the configuration script will search 
-  the LIBTIFF library in standard places.
-  When everything else fails, you can simply define the environment
-  variables TIFF_CFLAGS and TIFF_LIBS.
 
-Always check the output of the configuration script for warnings and errors.
-In particular, the configuration script might disable the compilation of
-djview if it cannot locate the required libraries and utilities.  The warning
-messages are the only way to know.
+Installation Layout
+===================
 
-3.3 - MAKE
-----------
+`cmake --install` installs:
 
-You can then perform the compilation by typing 
+- executables to `bin/`
+- the shared library to `lib/`
+- public headers to `include/libdjvu/`
+- man pages to `share/man/`
+- shared data to `share/djvu/`
+- `pkg-config` metadata to `lib/pkgconfig/`
+- CMake package metadata to `lib/cmake/DjVuLibre/`
 
-        $ make
 
-The compilation can last a few minutes.  Again check the output for warnings
-and errors.  Finally a brief message lets you know that the compilation was
-successful.  You can then proceed with the installation.
+Testing
+=======
 
-3.4 - INSTALL
-------------
+Two test layers are supported:
 
-Typing:
+- `libdjvu_smoke_test` is always available
+- `libdjvu_gtest` is built when `DJVULIBRE_ENABLE_GTEST=ON`
 
-        $ make install
-
-or if necessary:
+Linux example:
 
-        $ sudo make install
+```bash
+ctest --test-dir build --output-on-failure
+```
 
-should:
+Windows example:
 
-- install the executable programs into "${prefix}/bin/".
-- possibly install the shared library into "${prefix}/lib/".
-- install the man pages under "${prefix}/man or ${prefix}/share/man/".
-- install various ancillary files under "${prefix}/share/djvu/".
-- install "${prefix}/share/pkgconfig.pc".
-- optionally install the icon and mime type information files
+```powershell
+ctest --test-dir build-windows -C Debug --output-on-failure
+```
 
-Where ${prefix} refers to the directory specified by the prefix option
-of the configuration script, which defaults to "/usr/local", and the
-paths above can be fine-tuned using appropriate arguments to
-./configure and make.
-
-
-4 - BUILDING FOR MAC OS X
-=========================
-
-We recommend that you first install homebrew and use 
-command "brew install" to obtain the following packages:
-  $ brew install autoconf automake libtool pkg-config
-  $ brew install jpeg libtiff
-
-Note that homebrew comes with a djvulibre package already.
-The following instructions explain how to compile djvulibre
-in a standalone manner. You may want to do that if you want
-the latest version of djvulibre. Otherwise, chances are
-that you should just install the djvulibre homebrew package.
-  $ brew install djvulibre
-
-But most people should find sufficient
-to just install the homebrew package.
-
-Then you can run configure
-  $ ./configure --disable-desktopfiles 
-
-Then you can compile with 
-  $ make
-
-Running "make install" will install djvulibre in directory /usr/local.
-This may not be a good idea as they will interfere with homebrew.
-You may instead specify an alternate directory with DESTDIR=...
-  $ make install DESTDIR=/usr/local/djvulibre-install
-  
-
-
-5 - BUILDING FOR WINDOWS
-========================
-
-5.1- Using Microsoft Visual C++ 2019
-------------------------------------
-
-   See the directory win32.
-   Populate the zlib, jpeg and tiff directories with
-   the open source code suggested in the README files.
-   Check windows/djvulibre/dirs.props to see
-   how to name the directories.
-   Then open windows/djvulibre/djvulibre.sln and compile.
-
-   Next step would then be to follow the instructions
-   in the djview package to create a djview project and
-   add it to this solution. Finally you can use the script
-   djvulibre-install.sh and djvulibre.nsi to prepare
-   the djvulibre+djview installer.
-
-
-5.2- Using Mingw
-----------------
-
-   You must first install the mingw compiler and the msys environment.
-   See www.mingw.org for more information.
-   From the msys shell, run the usual commands 
-     $ configure
-     $ make
-   Then collect the djvulibre dll from directory libdjvu/.libs
-   and the executables from directory tools/.libs 
-   Please refer to the file INSTALL for information
-
-5.3- Running library unit tests natively on Windows
----------------------------------------------------
-
-   A native MSVC GoogleTest project is available in:
-     windows/djvulibre/libdjvu_gtest/libdjvu_gtest.vcxproj
-
-   You can run it from PowerShell without WSL:
-     $ .\scripts\run_windows_tests.ps1 -Configuration Debug -Platform x64 -Toolset auto
-
-   Notes:
-   - The script auto-detects Visual Studio/Build Tools and initializes the MSVC environment itself.
-   - The script builds and runs only `libdjvu_gtest`.
-   - GoogleTest is taken from `GTEST_ROOT` or `third_party\googletest` when available; otherwise the script falls back to `vcpkg` (`gtest:<triplet>`).
-   - New unit tests are auto-picked from files matching `tests/gtest/test_*.cpp`.
-   - Third-party dependency folders under `windows\jpeg`, `windows\zlib`, and `windows\tiff`
-     must be populated the same way as for normal Windows builds.
-   about the arguments of the script 'configure'.
-
-
-5.3- Using Cygwin 
------------------
-
-   Simply run the usual commands 
-     $ configure
-     $ make
-     $ make install
-   Please refer to the file INSTALL for information
-   about the arguments of the script 'configure'.
- 
-
+Some GoogleTest cases are intentionally excluded from the current Windows
+target set until symbol-export cleanup is finished. See
+`tests/gtest/WINDOWS_NONLINKING.md`.

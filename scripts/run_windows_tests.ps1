@@ -3,247 +3,197 @@ param(
   [string]$Configuration = "Debug",
   [ValidateSet("Win32", "x64")]
   [string]$Platform = "x64",
-  [ValidateSet("auto", "v143", "v145")]
+  [ValidateSet("auto", "v142", "v143")]
   [string]$Toolset = "auto",
-  [switch]$NoBuild
+  [string]$BuildDir = "build-windows",
+  [switch]$NoBuild,
+  [switch]$Package
 )
 
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$solution = Join-Path $repoRoot "windows\\djvulibre\\djvulibre.sln"
-$outputDir = Join-Path $repoRoot ("windows\\build\\{0}\\{1}" -f $Configuration, $Platform)
-$gtestExe = Join-Path $outputDir "libdjvu_gtest.exe"
+$buildRoot = Join-Path $repoRoot $BuildDir
 
-function Get-VsInstallPath {
-  $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\\Installer\\vswhere.exe"
-  if (-not (Test-Path $vswhere)) {
-    return $null
-  }
-  $installPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
-  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($installPath)) {
-    return $null
-  }
-  return $installPath.Trim()
-}
-
-function Resolve-Toolset {
-  param(
-    [string]$RequestedToolset,
-    [string]$VsInstallPath
-  )
-
-  if ($RequestedToolset -ne "auto") {
-    return $RequestedToolset
-  }
-
-  if ([string]::IsNullOrWhiteSpace($VsInstallPath)) {
-    throw "Visual Studio installation was not detected. Install Visual Studio Build Tools 2022."
-  }
-
-  $vcRoot = Join-Path $VsInstallPath "MSBuild\\Microsoft\\VC"
-  $toolsetBases = @()
-
-  if (Test-Path $vcRoot) {
-    $toolsetBases = Get-ChildItem -Path $vcRoot -Directory |
-      Where-Object { $_.Name -match '^v\d+$' } |
-      Sort-Object Name -Descending |
-      ForEach-Object { Join-Path $_.FullName "Platforms\\x64\\PlatformToolsets" }
-  }
-
-  foreach ($base in $toolsetBases) {
-    if (Test-Path (Join-Path $base "v145\\Toolset.props")) {
-      return "v145"
-    }
-  }
-
-  foreach ($base in $toolsetBases) {
-    if (Test-Path (Join-Path $base "v143\\Toolset.props")) {
-      return "v143"
-    }
-  }
-
-  throw "Unable to auto-detect PlatformToolset. Expected v145 or v143 under: $vcRoot"
-}
-
-function Invoke-MsBuild {
-  param(
-    [string[]]$Arguments
-  )
-
-  $msbuild = Get-Command msbuild -ErrorAction SilentlyContinue
-  if ($msbuild) {
-    Write-Host "MSBuild: $($msbuild.Source)"
-    & $msbuild.Source @Arguments
-    $script:MsBuildExitCode = [int]$LASTEXITCODE
-    return
-  }
-
-  $vsInstallPath = Get-VsInstallPath
-  if (-not $vsInstallPath) {
-    throw "msbuild not found and Visual Studio installation was not detected. Install Visual Studio Build Tools 2022."
-  }
-
-  $msbuildExe = Join-Path $vsInstallPath "MSBuild\\Current\\Bin\\MSBuild.exe"
-  if (-not (Test-Path $msbuildExe)) {
-    throw "MSBuild.exe not found: $msbuildExe"
-  }
-
-  Write-Host "MSBuild: $msbuildExe"
-  & $msbuildExe @Arguments
-  $script:MsBuildExitCode = [int]$LASTEXITCODE
-  return
-}
-
-function Get-VcpkgRoot {
-  $candidates = @()
-  if (-not [string]::IsNullOrWhiteSpace($env:VCPKG_ROOT)) {
-    $candidates += $env:VCPKG_ROOT
-  }
-  $candidates += (Join-Path $env:USERPROFILE "vcpkg")
-  $candidates += "C:\\vcpkg"
-  $candidates += "C:\\tools\\vcpkg"
-
-  foreach ($root in $candidates) {
-    if ([string]::IsNullOrWhiteSpace($root)) {
-      continue
-    }
-    if (Test-Path (Join-Path $root "vcpkg.exe")) {
-      return (Resolve-Path $root).Path
-    }
+function Get-VsWhere {
+  $path = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+  if (Test-Path $path) {
+    return $path
   }
   return $null
 }
 
-function Get-VcpkgTriplet {
+function Get-VisualStudioInfo {
+  $vswhere = Get-VsWhere
+  if (-not $vswhere) {
+    throw "vswhere.exe was not found. Install Visual Studio 2019 or newer."
+  }
+
+  $raw = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json
+  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($raw)) {
+    throw "Visual Studio 2019 or newer with C++ tools was not detected."
+  }
+
+  $items = $raw | ConvertFrom-Json
+  if ($items -isnot [System.Array]) {
+    $items = @($items)
+  }
+  if ($items.Count -lt 1) {
+    throw "Visual Studio 2019 or newer with C++ tools was not detected."
+  }
+
+  $item = $items[0]
+  $major = [int]($item.installationVersion.Split(".")[0])
+  switch ($major) {
+    17 {
+      return @{
+        InstallPath = $item.installationPath
+        Generator = "Visual Studio 17 2022"
+        DefaultToolset = "v143"
+      }
+    }
+    16 {
+      return @{
+        InstallPath = $item.installationPath
+        Generator = "Visual Studio 16 2019"
+        DefaultToolset = "v142"
+      }
+    }
+    default {
+      throw "Unsupported Visual Studio version: $($item.installationVersion). Require Visual Studio 2019 or newer."
+    }
+  }
+}
+
+function Get-Triplet {
   if ($Platform -eq "x64") {
     return "x64-windows"
   }
   return "x86-windows"
 }
 
-function Get-GTestRoot {
-  $candidates = @()
-  if (-not [string]::IsNullOrWhiteSpace($env:GTEST_ROOT)) {
-    $candidates += $env:GTEST_ROOT
-  }
-  $candidates += (Join-Path $repoRoot "third_party\\googletest")
-
-  foreach ($root in $candidates) {
-    if ([string]::IsNullOrWhiteSpace($root)) {
-      continue
-    }
-    $direct = Join-Path $root "src\\gtest-all.cc"
-    $nested = Join-Path $root "googletest\\src\\gtest-all.cc"
-    if ((Test-Path $direct) -or (Test-Path $nested)) {
-      return (Resolve-Path $root).Path
-    }
+function Get-VcpkgRoot {
+  if (-not [string]::IsNullOrWhiteSpace($env:VCPKG_ROOT) -and (Test-Path (Join-Path $env:VCPKG_ROOT "vcpkg.exe"))) {
+    return (Resolve-Path $env:VCPKG_ROOT).Path
   }
 
-  return $null
+  return (Join-Path $repoRoot "third_party\vcpkg")
 }
 
-function Ensure-GTestDependency {
+function Ensure-Vcpkg {
+  param([string]$Root)
+
+  if (-not (Test-Path $Root)) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $Root -Parent) | Out-Null
+    git clone https://github.com/microsoft/vcpkg.git $Root
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to clone vcpkg into $Root"
+    }
+  }
+
+  $vcpkgExe = Join-Path $Root "vcpkg.exe"
+  if (-not (Test-Path $vcpkgExe)) {
+    $bootstrap = Join-Path $Root "bootstrap-vcpkg.bat"
+    if (-not (Test-Path $bootstrap)) {
+      throw "vcpkg bootstrap script not found: $bootstrap"
+    }
+    & $bootstrap -disableMetrics
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to bootstrap vcpkg."
+    }
+  }
+
+  return (Resolve-Path $Root).Path
+}
+
+function Ensure-VcpkgPackages {
   param(
-    [string]$VcpkgRoot,
+    [string]$Root,
     [string]$Triplet
   )
 
-  $includeFile = Join-Path $VcpkgRoot ("installed\\{0}\\include\\gtest\\gtest.h" -f $Triplet)
-  if (Test-Path $includeFile) {
-    return
-  }
+  $vcpkgExe = Join-Path $Root "vcpkg.exe"
+  $packages = @(
+    "libjpeg-turbo:$Triplet"
+    "tiff:$Triplet"
+    "gtest:$Triplet"
+  )
 
-  $vcpkgExe = Join-Path $VcpkgRoot "vcpkg.exe"
-  Write-Host "Installing gtest via vcpkg ($Triplet)..."
-  & $vcpkgExe install ("gtest:{0}" -f $Triplet)
+  & $vcpkgExe install @packages
   if ($LASTEXITCODE -ne 0) {
-    throw "Failed to install gtest via vcpkg (exit code $LASTEXITCODE)."
-  }
-
-  if (-not (Test-Path $includeFile)) {
-    throw "gtest headers not found after installation: $includeFile"
+    throw "vcpkg install failed."
   }
 }
 
-function Add-GTestRuntimePath {
-  param(
-    [string]$VcpkgRoot,
-    [string]$Triplet
-  )
+function Invoke-CMake {
+  param([string[]]$Arguments)
 
-  $runtimeDir = if ($Configuration -eq "Debug") {
-    Join-Path $VcpkgRoot ("installed\\{0}\\debug\\bin" -f $Triplet)
-  } else {
-    Join-Path $VcpkgRoot ("installed\\{0}\\bin" -f $Triplet)
+  Write-Host ("cmake " + ($Arguments -join " "))
+  & cmake @Arguments
+  if ($LASTEXITCODE -ne 0) {
+    throw "cmake failed with exit code $LASTEXITCODE"
   }
-
-  if (-not (Test-Path $runtimeDir)) {
-    throw "gtest runtime directory not found: $runtimeDir"
-  }
-
-  $env:PATH = "$runtimeDir;$env:PATH"
 }
 
-$resolvedToolset = $Toolset
-if ($Toolset -eq "auto") {
-  $resolvedToolset = Resolve-Toolset -RequestedToolset $Toolset -VsInstallPath (Get-VsInstallPath)
+$vsInfo = Get-VisualStudioInfo
+$resolvedToolset = if ($Toolset -eq "auto") { $vsInfo.DefaultToolset } else { $Toolset }
+$triplet = Get-Triplet
+$vcpkgRoot = Ensure-Vcpkg -Root (Get-VcpkgRoot)
+Ensure-VcpkgPackages -Root $vcpkgRoot -Triplet $triplet
+
+$toolchain = Join-Path $vcpkgRoot "scripts\buildsystems\vcpkg.cmake"
+if (-not (Test-Path $toolchain)) {
+  throw "vcpkg toolchain file not found: $toolchain"
 }
 
-$gtestRoot = Get-GTestRoot
-$vcpkgRoot = $null
-$vcpkgTriplet = $null
+$cmakeArgs = @(
+  "-S", $repoRoot,
+  "-B", $buildRoot,
+  "-G", $vsInfo.Generator,
+  "-A", $Platform,
+  "-T", $resolvedToolset,
+  "-DCMAKE_TOOLCHAIN_FILE=$toolchain",
+  "-DVCPKG_TARGET_TRIPLET=$triplet",
+  "-DDJVULIBRE_ENABLE_GTEST=ON",
+  "-DDJVULIBRE_ENABLE_XMLTOOLS=ON",
+  "-DDJVULIBRE_ENABLE_DESKTOPFILES=OFF"
+)
 
-if ($gtestRoot) {
-  Write-Host "Using local GoogleTest sources: $gtestRoot"
-} else {
-  $vcpkgRoot = Get-VcpkgRoot
-  if (-not $vcpkgRoot) {
-    throw "GoogleTest sources were not found and vcpkg was not found. Set GTEST_ROOT, add third_party\\googletest, or install vcpkg."
-  }
-  $vcpkgTriplet = Get-VcpkgTriplet
-  Ensure-GTestDependency -VcpkgRoot $vcpkgRoot -Triplet $vcpkgTriplet
-  Add-GTestRuntimePath -VcpkgRoot $vcpkgRoot -Triplet $vcpkgTriplet
-}
+Invoke-CMake -Arguments $cmakeArgs
 
 if (-not $NoBuild) {
-  Write-Host "Building libdjvu_gtest ($Configuration|$Platform, $resolvedToolset)..."
-  $buildArgs = @(
-    $solution,
-    "/nologo",
-    "/verbosity:minimal",
-    "/m",
-    "/t:libdjvu_gtest",
-    "/p:Configuration=$Configuration",
-    "/p:Platform=$Platform",
-    "/p:PlatformToolset=$resolvedToolset",
-    "/p:DjvuPlatformToolset=$resolvedToolset"
-  )
-  if ($gtestRoot) {
-    $buildArgs += "/p:GTestRoot=$gtestRoot"
-  } else {
-    $buildArgs += "/p:VcpkgRoot=$vcpkgRoot"
-    $buildArgs += "/p:VcpkgTriplet=$vcpkgTriplet"
-  }
-  $script:MsBuildExitCode = 1
-  Invoke-MsBuild -Arguments $buildArgs
-  $exitCode = [int]$script:MsBuildExitCode
-  Write-Host "Build finished with exit code $exitCode"
-  if ($exitCode -ne 0) {
-    throw "Build failed with exit code $exitCode"
-  }
+  Invoke-CMake -Arguments @("--build", $buildRoot, "--config", $Configuration, "--parallel")
 }
 
-if (-not (Test-Path $gtestExe)) {
-  throw "GoogleTest executable not found: $gtestExe"
-}
+$runtimeDir = Join-Path $buildRoot ("bin\{0}" -f $Configuration)
+$vcpkgBin = Join-Path $vcpkgRoot ("installed\{0}\bin" -f $triplet)
+$vcpkgDebugBin = Join-Path $vcpkgRoot ("installed\{0}\debug\bin" -f $triplet)
+$env:PATH = "$runtimeDir;$vcpkgBin;$vcpkgDebugBin;$env:PATH"
 
-$env:PATH = "$outputDir;$env:PATH"
-
-Write-Host "Running $gtestExe"
-& $gtestExe --gtest_color=yes
+& ctest --test-dir $buildRoot -C $Configuration --output-on-failure
 if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE
 }
 
-Write-Host "Windows gtest suite passed."
+if ($Package) {
+  $cpackConfig = Join-Path $buildRoot "CPackConfig.cmake"
+  if (-not (Test-Path $cpackConfig)) {
+    throw "CPackConfig.cmake not found: $cpackConfig"
+  }
+  & cpack --config $cpackConfig -C $Configuration -G ZIP
+  if ($LASTEXITCODE -ne 0) {
+    throw "CPack ZIP packaging failed."
+  }
+
+  $makensis = Get-Command makensis -ErrorAction SilentlyContinue
+  if ($makensis) {
+    & cpack --config $cpackConfig -C $Configuration -G NSIS
+    if ($LASTEXITCODE -ne 0) {
+      throw "CPack NSIS packaging failed."
+    }
+  } else {
+    Write-Host "makensis not found, skipping NSIS packaging."
+  }
+}
+
+Write-Host "Windows CMake build and tests passed."

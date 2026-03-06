@@ -1,0 +1,67 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+/* config.h: begin */
+
+#define DJVULIBRE_VERSION "@PROJECT_VERSION@"
+
+#cmakedefine HAVE_BOOL 1
+#cmakedefine HAVE_CPUID_H 1
+#cmakedefine HAVE_DIRENT_H 1
+#cmakedefine HAVE_EXCEPTIONS 1
+#cmakedefine HAVE_FORK 1
+#cmakedefine HAVE_FSEEKO 1
+#cmakedefine HAVE_GETHOSTNAME 1
+#cmakedefine HAVE_GETOPT_H 1
+#cmakedefine HAVE_GETPWUID 1
+#cmakedefine HAVE_ICONV 1
+#cmakedefine HAVE_ICONV_H 1
+#cmakedefine HAVE_INTEL_ATOMIC_BUILTINS 1
+#cmakedefine HAVE_INTTYPES_H 1
+#cmakedefine HAVE_ISWSPACE 1
+#cmakedefine HAVE_JPEG 1
+#cmakedefine HAVE_LANGINFO_H 1
+#cmakedefine HAVE_LIBM 1
+#cmakedefine HAVE_LONG_LONG_INT 1
+#cmakedefine HAVE_MBSTATE_T 1
+#cmakedefine HAVE_MEMBER_TEMPLATES 1
+#cmakedefine HAVE_MKSTEMP 1
+#cmakedefine HAVE_MMAP 1
+#cmakedefine HAVE_NAMESPACES 1
+#cmakedefine HAVE_NEW_H 1
+#cmakedefine HAVE_NL_LANGINFO 1
+#cmakedefine HAVE_PTHREAD 1
+#cmakedefine HAVE_PUTC_UNLOCKED 1
+#cmakedefine HAVE_SCHED_H 1
+#cmakedefine HAVE_SCHED_YIELD 1
+#cmakedefine HAVE_SETENV 1
+#cmakedefine HAVE_SIGACTION 1
+#cmakedefine HAVE_SNPRINTF 1
+#cmakedefine HAVE_STDINCLUDES 1
+#cmakedefine HAVE_STDINT_H 1
+#cmakedefine HAVE_STRERROR 1
+#cmakedefine HAVE_STRFTIME 1
+#cmakedefine HAVE_SYS_IPC_H 1
+#cmakedefine HAVE_SYS_MMAN_H 1
+#cmakedefine HAVE_SYS_SHM_H 1
+#cmakedefine HAVE_TIFF 1
+#cmakedefine HAVE_TYPENAME 1
+#cmakedefine HAVE_VSNPRINTF 1
+#cmakedefine HAVE_WCHAR_H 1
+#cmakedefine HAVE_WCHAR_T 1
+#cmakedefine HAVE_WCRTOMB 1
+#cmakedefine HAVE_WCTYPE_H 1
+
+#cmakedefine AUTOCONF 1
+#cmakedefine GCONTAINER_NO_MEMBER_TEMPLATES 1
+#cmakedefine GCONTAINER_NO_TYPENAME 1
+#cmakedefine HAS_CTRL_C_IN_ERR_MSG 1
+#cmakedefine HAS_ICONV 1
+#cmakedefine HAS_MBSTATE 1
+#cmakedefine HAS_MEMMAP 1
+#cmakedefine HAS_WCHAR 1
+#cmakedefine HAS_WCTYPE 1
+#cmakedefine NEED_JPEG_DECODER 1
+#cmakedefine UNIX 1
+
+/* config.h: end */
+#endif

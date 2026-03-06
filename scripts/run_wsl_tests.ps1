@@ -1,18 +1,20 @@
 param(
-  [ValidateSet("5", "6")]
-  [string]$QtMajor = "6",
   [switch]$NoInstallDeps,
   [switch]$EnableGtest,
+  [ValidateSet("Debug", "Release")]
+  [string]$BuildType = "Release",
   [int]$Jobs = 0
 )
+
+$ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $repoRootLinux = (& wsl wslpath -a $repoRoot).Trim()
 if (-not $repoRootLinux) {
-  throw "Failed to convert repository path to WSL path."
+  throw "Failed to convert repository path to a WSL path."
 }
 
-$args = @("--qt-major", $QtMajor)
+$args = @("--build-type", $BuildType)
 if ($NoInstallDeps) {
   $args += "--no-install-deps"
 }

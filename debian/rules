@@ -1,32 +1,30 @@
 #!/usr/bin/make -f
 
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
 %:
-	dh $@
+	dh $@ --buildsystem=cmake --builddirectory=build-debian
 
 # extract library major version from source build system
 libver0 := $(shell \
-	egrep 'm4_define..lt_compat.,' configure.ac \
-	 | head -1 \
-	 | sed 's:m4_define::' \
-	 | tr --delete --complement '[:digit:]')
+	sed -n 's/.*set(DJVULIBRE_SOVERSION \([0-9][0-9]*\)).*/\1/p' CMakeLists.txt \
+	 | head -1)
 
 # extract library major version expected by debian packaging
 libver := $(shell egrep '^Package: libdjvulibre[0-9]+$$' debian/control \
 		  | head -1 \
 		  | sed 's/Package: libdjvulibre//')
-
-export DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
-
-configure_options += --enable-static
-configure_options += --enable-shared
 ifneq (,$(findstring debug,$(DEB_BUILD_OPTIONS)))
-configure_options += --enable-debug
+configure_options += -DCMAKE_BUILD_TYPE=Debug
 else ifneq (,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
-# consider modifying the autoconf scripts to accept a --disable-optimization flag
-configure_options += --enable-debug
+configure_options += -DCMAKE_BUILD_TYPE=Debug
+else
+configure_options += -DCMAKE_BUILD_TYPE=Release
 endif
+configure_options += -DDJVULIBRE_ENABLE_GTEST=OFF
+configure_options += -DDJVULIBRE_ENABLE_XMLTOOLS=ON
+configure_options += -DDJVULIBRE_ENABLE_DESKTOPFILES=ON
 
 override_dh_testdir:
 	@echo "library major version: upstream $(libver0), debian $(libver)"
