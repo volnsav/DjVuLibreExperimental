@@ -1,16 +1,18 @@
-DjVuLibre
-=========
+# DjVuLibre
+
+[![CI](https://github.com/volnsav/DjVuLibreExperimental/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/volnsav/DjVuLibreExperimental/actions/workflows/ci.yml)
 
 DjVuLibre is the reference C++ library and command-line toolset for the DjVu
 document format. This repository contains only the library, command-line
 utilities, XML tools, tests, and packaging metadata.
 
+**Current version:** 3.5.30
+
 `DjView` is not part of this repository. The Qt-based viewer lives in a
 separate repository and should be built and packaged independently.
 
 
-Contents
-========
+## Contents
 
 This repository builds:
 
@@ -20,8 +22,7 @@ This repository builds:
 - smoke and GoogleTest-based library tests
 
 
-Build System
-============
+## Build system
 
 The project uses CMake only.
 
@@ -37,8 +38,7 @@ On Linux, `pkg-config`, `cmake`, `ninja-build`, `libjpeg-dev`, `libtiff-dev`,
 and `libgtest-dev` are the normal package names on Debian/Ubuntu.
 
 
-Linux And macOS
-===============
+## Linux and macOS
 
 Typical out-of-tree build:
 
@@ -68,10 +68,9 @@ For WSL there is a helper script:
 ```
 
 
-Windows
-=======
+## Windows
 
-Windows support is CMake-first and targets Visual Studio 2019 or newer.
+Windows support is CMake-first and targets Visual Studio 2019 or newer (tested with VS 2026).
 Third-party integration is expected to live under `third_party/`, with
 vendored source trees as the default Windows dependency source.
 
@@ -94,14 +93,14 @@ Manual CMake example:
 
 ```powershell
 cmake -S third_party\zlib -B build-windows\third_party\zlib `
-  -G "Visual Studio 17 2022" `
+  -G "Visual Studio 18 2026" `
   -A x64 `
   -DCMAKE_INSTALL_PREFIX="$PWD\\third_party\\install\\x64\\Release"
 cmake --build build-windows\third_party\zlib --config Release
 cmake --install build-windows\third_party\zlib --config Release
 
 cmake -S . -B build-windows `
-  -G "Visual Studio 17 2022" `
+  -G "Visual Studio 18 2026" `
   -A x64 `
   -DCMAKE_PREFIX_PATH="$PWD\\third_party\\install\\x64\\Release" `
   -DDJVULIBRE_ENABLE_GTEST=ON
@@ -124,8 +123,7 @@ cpack -C Release -G NSIS
 ```
 
 
-Installation Layout
-===================
+## Installation layout
 
 `cmake --install` installs:
 
@@ -138,8 +136,7 @@ Installation Layout
 - CMake package metadata to `lib/cmake/DjVuLibre/`
 
 
-Testing
-=======
+## Testing
 
 Two test layers are supported:
 
