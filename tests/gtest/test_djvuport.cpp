@@ -87,16 +87,16 @@ TEST(DjVuPortTest, ClosestRouteConsumesErrorBeforeFartherRoute)
 {
   GP<RecordingPort> src = new RecordingPort();
   GP<RecordingPort> mid = new RecordingPort();
-  GP<RecordingPort> far = new RecordingPort();
+  GP<RecordingPort> far_port = new RecordingPort();
   DjVuPortcaster *pc = DjVuPort::get_portcaster();
 
   mid->consume_error = true;
   pc->add_route(src, mid);
-  pc->add_route(mid, far);
+  pc->add_route(mid, far_port);
 
   EXPECT_TRUE(pc->notify_error(src, GUTF8String("err")));
   EXPECT_EQ(1, mid->error_count);
-  EXPECT_EQ(0, far->error_count);
+  EXPECT_EQ(0, far_port->error_count);
 }
 
 TEST(DjVuPortTest, CopyConstructedPortCanBeRoutedAndUsed)

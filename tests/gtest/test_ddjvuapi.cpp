@@ -2001,7 +2001,8 @@ TEST(DdJvuApiTest, ReferenceSinglePageFixtureSupportsIncrementalStreamingDecodeA
   constexpr size_t kChunk = 257;
   for (size_t offset = 0; offset < data.size(); offset += kChunk)
   {
-    const size_t len = std::min(kChunk, data.size() - offset);
+    const size_t remaining = data.size() - offset;
+    const size_t len = (remaining < kChunk) ? remaining : kChunk;
     ddjvu_stream_write(doc, 0, data.data() + offset, static_cast<unsigned long>(len));
     PumpMessages(ctx);
   }
@@ -2093,7 +2094,8 @@ TEST(DdJvuApiTest, ReferenceBundledSharedFixtureSupportsIncrementalStreamingAndF
   constexpr size_t kChunk = 521;
   for (size_t offset = 0; offset < data.size(); offset += kChunk)
   {
-    const size_t len = std::min(kChunk, data.size() - offset);
+    const size_t remaining = data.size() - offset;
+    const size_t len = (remaining < kChunk) ? remaining : kChunk;
     ddjvu_stream_write(doc, 0, data.data() + offset, static_cast<unsigned long>(len));
     PumpMessages(ctx);
   }

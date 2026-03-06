@@ -251,7 +251,7 @@ You may instead specify an alternate directory with DESTDIR=...
    Notes:
    - The script auto-detects Visual Studio/Build Tools and initializes the MSVC environment itself.
    - The script builds and runs both `libdjvu_smoke_test` and `libdjvu_gtest`.
-   - GoogleTest dependency is resolved via `vcpkg` automatically (`gtest:<triplet>`).
+   - GoogleTest is taken from `GTEST_ROOT` or `third_party\googletest` when available; otherwise the script falls back to `vcpkg` (`gtest:<triplet>`).
    - New unit tests are auto-picked from files matching `tests/gtest/test_*.cpp`.
    - Third-party dependency folders under `windows\jpeg`, `windows\zlib`, and `windows\tiff`
      must be populated the same way as for normal Windows builds.

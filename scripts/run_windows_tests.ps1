@@ -123,6 +123,27 @@ function Get-VcpkgTriplet {
   return "x86-windows"
 }
 
+function Get-GTestRoot {
+  $candidates = @()
+  if (-not [string]::IsNullOrWhiteSpace($env:GTEST_ROOT)) {
+    $candidates += $env:GTEST_ROOT
+  }
+  $candidates += (Join-Path $repoRoot "third_party\\googletest")
+
+  foreach ($root in $candidates) {
+    if ([string]::IsNullOrWhiteSpace($root)) {
+      continue
+    }
+    $direct = Join-Path $root "src\\gtest-all.cc"
+    $nested = Join-Path $root "googletest\\src\\gtest-all.cc"
+    if ((Test-Path $direct) -or (Test-Path $nested)) {
+      return (Resolve-Path $root).Path
+    }
+  }
+
+  return $null
+}
+
 function Ensure-GTestDependency {
   param(
     [string]$VcpkgRoot,
@@ -170,13 +191,21 @@ if ($Toolset -eq "auto") {
   $resolvedToolset = Resolve-Toolset -RequestedToolset $Toolset -VsInstallPath (Get-VsInstallPath)
 }
 
-$vcpkgRoot = Get-VcpkgRoot
-if (-not $vcpkgRoot) {
-  throw "vcpkg was not found. Install vcpkg or set VCPKG_ROOT."
+$gtestRoot = Get-GTestRoot
+$vcpkgRoot = $null
+$vcpkgTriplet = $null
+
+if ($gtestRoot) {
+  Write-Host "Using local GoogleTest sources: $gtestRoot"
+} else {
+  $vcpkgRoot = Get-VcpkgRoot
+  if (-not $vcpkgRoot) {
+    throw "GoogleTest sources were not found and vcpkg was not found. Set GTEST_ROOT, add third_party\\googletest, or install vcpkg."
+  }
+  $vcpkgTriplet = Get-VcpkgTriplet
+  Ensure-GTestDependency -VcpkgRoot $vcpkgRoot -Triplet $vcpkgTriplet
+  Add-GTestRuntimePath -VcpkgRoot $vcpkgRoot -Triplet $vcpkgTriplet
 }
-$vcpkgTriplet = Get-VcpkgTriplet
-Ensure-GTestDependency -VcpkgRoot $vcpkgRoot -Triplet $vcpkgTriplet
-Add-GTestRuntimePath -VcpkgRoot $vcpkgRoot -Triplet $vcpkgTriplet
 
 if (-not $NoBuild) {
   Write-Host "Building libdjvu_smoke_test + libdjvu_gtest ($Configuration|$Platform, $resolvedToolset)..."
@@ -189,10 +218,14 @@ if (-not $NoBuild) {
     "/p:Configuration=$Configuration",
     "/p:Platform=$Platform",
     "/p:PlatformToolset=$resolvedToolset",
-    "/p:DjvuPlatformToolset=$resolvedToolset",
-    "/p:VcpkgRoot=$vcpkgRoot",
-    "/p:VcpkgTriplet=$vcpkgTriplet"
+    "/p:DjvuPlatformToolset=$resolvedToolset"
   )
+  if ($gtestRoot) {
+    $buildArgs += "/p:GTestRoot=$gtestRoot"
+  } else {
+    $buildArgs += "/p:VcpkgRoot=$vcpkgRoot"
+    $buildArgs += "/p:VcpkgTriplet=$vcpkgTriplet"
+  }
   $script:MsBuildExitCode = 1
   Invoke-MsBuild -Arguments $buildArgs
   $exitCode = [int]$script:MsBuildExitCode
