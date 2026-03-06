@@ -88,7 +88,7 @@
 #include "tiff2pdf.h"
 
 
-#if HAVE_PUTC_UNLOCKED
+#if HAVE_PUTC_UNLOCKED && !defined(_WIN32)
 # undef putc
 # define putc putc_unlocked
 #endif

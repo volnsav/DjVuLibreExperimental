@@ -3,11 +3,12 @@ Section: libs
 Priority: optional
 Maintainer: Barak A. Pearlmutter <bap@debian.org>
 Uploaders: Leon Bottou <leonb@bottou.org>
-Build-Depends: pkg-config,
+Build-Depends: cmake,
+	       pkg-config,
 	       debhelper (>= 11),
 	       libjpeg-dev,
 	       libtiff-dev,
-	       librsvg2-bin | imagemagick
+	       ninja-build
 Vcs-Git: https://salsa.debian.org/debian/djvulibre.git
 Vcs-Browser: https://salsa.debian.org/debian/djvulibre
 Homepage: http://djvu.sourceforge.net/
@@ -20,7 +21,7 @@ Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends},
 	 libdjvulibre21 (= ${binary:Version}), libjpeg-dev
 Description: Development files for the DjVu image format
- DjVu image format static library and development files.
+ Header files and build metadata for the DjVu image format library.
  .
  DjVu is a set of compression technologies, a file format, and a
  software platform for the delivery over the Web of digital documents,
@@ -60,20 +61,6 @@ Conflicts: libdjvulibre1, libdjvulibre21 (<= 3.5.20-5)
 Replaces: libdjvulibre15 (<= 3.5.20-5)
 Description: Desktop support for the DjVu image format
  Miscellaneous files to support the DjVu image format on the desktop.
-
-Package: djview
-Section: graphics
-Architecture: all
-Depends: ${shlibs:Depends}, ${misc:Depends}, djview4 | djview3
-Description: Transition package, djview3 to djview4
- Ease transition from djview or djview3 to djview4 with this dummy package.
-
-Package: djview3
-Section: graphics
-Architecture: all
-Depends: ${shlibs:Depends}, ${misc:Depends}, djview4
-Description: Transition package, djview3 to djview4
- Ease transition from djview3 to djview4 with this dummy package.
 
 Package: djvuserve
 Section: web

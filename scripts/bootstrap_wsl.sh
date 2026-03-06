@@ -1,29 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Bootstrap DjVuLibreExperimental build/test environment inside WSL (Ubuntu).
-# Usage examples:
-#   ./scripts/bootstrap_wsl.sh --qt-major 6
-#   ./scripts/bootstrap_wsl.sh --qt-major 5 --no-install-deps
-#   ./scripts/bootstrap_wsl.sh --qt-major 6 --jobs 8 --prefix "$PWD/.wsl-prefix"
+# Bootstrap a Linux/WSL build environment for DjVuLibre.
 
-QT_MAJOR="6"
 INSTALL_DEPS="1"
 JOBS=""
 PREFIX=""
 RUN_INSTALL="0"
 ENABLE_GTEST="0"
+BUILD_TYPE="Release"
+BUILD_DIR=""
 
 usage() {
   cat <<'EOF'
 Usage: bootstrap_wsl.sh [options]
 
 Options:
-  --qt-major {5|6}      Qt major version profile (default: 6)
   --no-install-deps      Do not install apt dependencies
-  --jobs N               Parallel jobs for make (default: nproc)
-  --prefix PATH          Installation prefix (default: ./_wsl-prefix)
-  --run-install          Run "make install" after build
+  --jobs N               Parallel jobs for the build (default: nproc)
+  --prefix PATH          Install prefix (default: ./_wsl-prefix)
+  --build-type TYPE      CMake build type: Release or Debug (default: Release)
+  --build-dir PATH       Build directory (default: ./build-wsl)
+  --run-install          Run "cmake --install" after build and test
   --enable-gtest         Enable GoogleTest-based unit tests
   -h, --help             Show this help
 EOF
@@ -31,10 +29,6 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --qt-major)
-      QT_MAJOR="${2:-}"
-      shift 2
-      ;;
     --no-install-deps)
       INSTALL_DEPS="0"
       shift
@@ -45,6 +39,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --prefix)
       PREFIX="${2:-}"
+      shift 2
+      ;;
+    --build-type)
+      BUILD_TYPE="${2:-}"
+      shift 2
+      ;;
+    --build-dir)
+      BUILD_DIR="${2:-}"
       shift 2
       ;;
     --run-install)
@@ -67,10 +69,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$QT_MAJOR" != "5" && "$QT_MAJOR" != "6" ]]; then
-  echo "ERROR: --qt-major must be 5 or 6" >&2
-  exit 2
-fi
+case "$BUILD_TYPE" in
+  Release|Debug)
+    ;;
+  *)
+    echo "ERROR: --build-type must be Release or Debug" >&2
+    exit 2
+    ;;
+esac
 
 if [[ -z "$JOBS" ]]; then
   JOBS="$(nproc)"
@@ -80,79 +86,44 @@ if [[ -z "$PREFIX" ]]; then
   PREFIX="$(pwd)/_wsl-prefix"
 fi
 
+if [[ -z "$BUILD_DIR" ]]; then
+  BUILD_DIR="$(pwd)/build-wsl"
+fi
+
 if [[ "$INSTALL_DEPS" == "1" ]]; then
   export DEBIAN_FRONTEND=noninteractive
   sudo apt-get update
   sudo apt-get install -y \
-    autoconf \
-    automake \
-    libtool \
+    cmake \
+    ninja-build \
     pkg-config \
     g++ \
-    make \
-    libtiff-dev \
-    libgl1-mesa-dev \
     libjpeg-dev \
+    libtiff-dev \
     zlib1g-dev
 
   if [[ "$ENABLE_GTEST" == "1" ]]; then
     sudo apt-get install -y libgtest-dev
   fi
-
-  if [[ "$QT_MAJOR" == "6" ]]; then
-    sudo apt-get install -y \
-      qt6-base-dev \
-      qt6-base-dev-tools \
-      qt6-tools-dev-tools \
-      qt6-l10n-tools
-  else
-    sudo apt-get install -y \
-      qtbase5-dev \
-      qttools5-dev-tools
-  fi
 fi
 
-if [[ "$QT_MAJOR" == "6" ]]; then
-  if command -v qmake6 >/dev/null 2>&1; then
-    export QMAKE="$(command -v qmake6)"
-  elif command -v qmake-qt6 >/dev/null 2>&1; then
-    export QMAKE="$(command -v qmake-qt6)"
-  else
-    echo "ERROR: Qt6 qmake not found (expected qmake6 or qmake-qt6)." >&2
-    exit 1
-  fi
-else
-  if command -v qmake >/dev/null 2>&1; then
-    export QMAKE="$(command -v qmake)"
-  elif command -v qmake-qt5 >/dev/null 2>&1; then
-    export QMAKE="$(command -v qmake-qt5)"
-  else
-    echo "ERROR: Qt5 qmake not found (expected qmake or qmake-qt5)." >&2
-    exit 1
-  fi
-fi
-
-echo "==> Qt profile: $QT_MAJOR (QMAKE=$QMAKE)"
+echo "==> Build dir: $BUILD_DIR"
 echo "==> Prefix: $PREFIX"
+echo "==> Build type: $BUILD_TYPE"
 echo "==> Jobs: $JOBS"
 
-CONFIGURE_ARGS=(
-  --prefix="$PREFIX"
-  --disable-desktopfiles
-)
-if [[ "$ENABLE_GTEST" == "1" ]]; then
-  CONFIGURE_ARGS+=(--enable-gtest)
-fi
+cmake -S . -B "$BUILD_DIR" -G Ninja \
+  -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+  -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+  -DDJVULIBRE_ENABLE_GTEST="$ENABLE_GTEST" \
+  -DDJVULIBRE_ENABLE_XMLTOOLS=ON \
+  -DDJVULIBRE_ENABLE_DESKTOPFILES=OFF
 
-./autogen.sh "${CONFIGURE_ARGS[@]}"
-make -j"$JOBS"
-if [[ "$ENABLE_GTEST" == "1" ]]; then
-  make -j"$JOBS" -C tests libdjvu_gtest
-  ./tests/libdjvu_gtest --gtest_color=yes
-fi
+cmake --build "$BUILD_DIR" --parallel "$JOBS"
+ctest --test-dir "$BUILD_DIR" --output-on-failure
 
 if [[ "$RUN_INSTALL" == "1" ]]; then
-  make install
+  cmake --install "$BUILD_DIR"
 fi
 
 echo "==> Done"

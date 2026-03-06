@@ -1,0 +1,170 @@
+include(CTest)
+
+add_executable(libdjvu_smoke_test libdjvu_smoke_test.cpp)
+target_include_directories(
+  libdjvu_smoke_test
+  PRIVATE
+    "${CMAKE_SOURCE_DIR}"
+    "${CMAKE_SOURCE_DIR}/libdjvu"
+    "${CMAKE_BINARY_DIR}/generated")
+target_link_libraries(libdjvu_smoke_test PRIVATE djvulibre)
+if(Threads_FOUND)
+  target_link_libraries(libdjvu_smoke_test PRIVATE Threads::Threads)
+endif()
+djvulibre_set_output_dirs(libdjvu_smoke_test)
+add_test(NAME libdjvu_smoke_test COMMAND libdjvu_smoke_test)
+set_tests_properties(libdjvu_smoke_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+if(DJVULIBRE_ENABLE_GTEST)
+  if(EXISTS "${DJVULIBRE_THIRD_PARTY_DIR}/googletest/CMakeLists.txt")
+    add_subdirectory("${DJVULIBRE_THIRD_PARTY_DIR}/googletest"
+                     "${CMAKE_BINARY_DIR}/third_party/googletest")
+    set(DJVULIBRE_GTEST_TARGET GTest::gtest)
+  else()
+    find_package(GTest QUIET)
+    if(GTest_FOUND OR TARGET GTest::gtest)
+      set(DJVULIBRE_GTEST_TARGET GTest::gtest)
+    else()
+      # Download GoogleTest when no system or vendored copy is available
+      include(FetchContent)
+      FetchContent_Declare(googletest
+        URL "https://github.com/google/googletest/releases/download/v1.17.0/googletest-1.17.0.tar.gz"
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+      FetchContent_MakeAvailable(googletest)
+      set(DJVULIBRE_GTEST_TARGET GTest::gtest)
+    endif()
+  endif()
+
+  set(DJVULIBRE_GTEST_SOURCES
+      gtest_main.cpp
+      gtest/test_arrays.cpp
+      gtest/test_atomic.cpp
+      gtest/test_bsencodebytestream.cpp
+      gtest/test_bsbytestream.cpp
+      gtest/test_byte_stream.cpp
+      gtest/test_bytestream_extra.cpp
+      gtest/test_codecs_converters.cpp
+      gtest/test_datapool.cpp
+      gtest/test_datapool_triggers.cpp
+      gtest/test_debug.cpp
+      gtest/test_ddjvuapi.cpp
+      gtest/test_djvmdir.cpp
+      gtest/test_djvmdir0.cpp
+      gtest/test_djvmdoc.cpp
+      gtest/test_djvmnav.cpp
+      gtest/test_djvuanno.cpp
+      gtest/test_djvudoceditor.cpp
+      gtest/test_djvudocument.cpp
+      gtest/test_djvudocument_extra.cpp
+      gtest/test_djvudumphelper.cpp
+      gtest/test_djvuerrorlist.cpp
+      gtest/test_djvufile.cpp
+      gtest/test_djvufilecache.cpp
+      gtest/test_djvuglobal.cpp
+      gtest/test_djvuglobalmemory.cpp
+      gtest/test_djvuimage.cpp
+      gtest/test_djvuinfo.cpp
+      gtest/test_djvumessage.cpp
+      gtest/test_djvumessagelite.cpp
+      gtest/test_djvunavdir.cpp
+      gtest/test_djvupalette.cpp
+      gtest/test_djvuport.cpp
+      gtest/test_djvusimpleport.cpp
+      gtest/test_djvutext.cpp
+      gtest/test_djvutops_options.cpp
+      gtest/test_djvutops_print.cpp
+      gtest/test_garray_edge_ops.cpp
+      gtest/test_gbitmap.cpp
+      gtest/test_gcontainer.cpp
+      gtest/test_gcontainer_copy.cpp
+      gtest/test_gcontainer_positions.cpp
+      gtest/test_gcontainer_sort_search.cpp
+      gtest/test_gexception.cpp
+      gtest/test_gexception_behavior.cpp
+      gtest/test_gexception_rethrow.cpp
+      gtest/test_giffmanager.cpp
+      gtest/test_glist_iterators.cpp
+      gtest/test_gmapareas.cpp
+      gtest/test_gnative_string.cpp
+      gtest/test_gnative_string_buffer.cpp
+      gtest/test_gos.cpp
+      gtest/test_gos_basename_edge.cpp
+      gtest/test_gos_cwd_error.cpp
+      gtest/test_gpbuffer_extended.cpp
+      gtest/test_gpixmap.cpp
+      gtest/test_grect.cpp
+      gtest/test_grectmapper.cpp
+      gtest/test_grectmapper_clear.cpp
+      gtest/test_grectmapper_inverse.cpp
+      gtest/test_gscaler.cpp
+      gtest/test_gsmartpointer.cpp
+      gtest/test_gstring.cpp
+      gtest/test_gstring_buffer_ops.cpp
+      gtest/test_gstring_mutation.cpp
+      gtest/test_gstring_search_spaces.cpp
+      gtest/test_gstring_static_parse.cpp
+      gtest/test_gstring_unicode.cpp
+      gtest/test_gsync_runtime.cpp
+      gtest/test_gthreads.cpp
+      gtest/test_gthreads_lowlevel.cpp
+      gtest/test_gunicode.cpp
+      gtest/test_gurl.cpp
+      gtest/test_gurl_arguments_order.cpp
+      gtest/test_gurl_djvuopts.cpp
+      gtest/test_gurl_equality_args.cpp
+      gtest/test_gurl_extra.cpp
+      gtest/test_gurl_filesystem.cpp
+      gtest/test_gurl_hash_pathname.cpp
+      gtest/test_gurl_normalization.cpp
+      gtest/test_gurl_relative.cpp
+      gtest/test_iffbytestream.cpp
+      gtest/test_image_render_extended.cpp
+      gtest/test_iw44image.cpp
+      gtest/test_jb2image.cpp
+      gtest/test_miniexp.cpp
+      gtest/test_mmx_control.cpp
+      gtest/test_mmrdecoder.cpp
+      gtest/test_reference_fixtures.cpp
+      gtest/test_unicode_bytestream.cpp
+      gtest/test_xmlparser.cpp
+      gtest/test_xmltags.cpp
+      gtest/test_zpcodec.cpp)
+
+  if(WIN32)
+    list(REMOVE_ITEM DJVULIBRE_GTEST_SOURCES
+         gtest/test_debug.cpp
+         gtest/test_djvmdir0.cpp
+         gtest/test_djvuerrorlist.cpp
+         gtest/test_djvufilecache.cpp
+         gtest/test_djvuimage.cpp
+         gtest/test_djvumessage.cpp
+         gtest/test_djvunavdir.cpp
+         gtest/test_djvutops_options.cpp
+         gtest/test_djvutops_print.cpp
+         gtest/test_giffmanager.cpp
+         gtest/test_gmapareas.cpp
+         gtest/test_gthreads_lowlevel.cpp
+         gtest/test_mmx_control.cpp
+         gtest/test_unicode_bytestream.cpp
+         gtest/test_zpcodec.cpp)
+    message(STATUS "Windows build: excluding known non-linking gtest sources")
+  endif()
+
+  add_executable(libdjvu_gtest ${DJVULIBRE_GTEST_SOURCES})
+  target_include_directories(
+    libdjvu_gtest
+    PRIVATE
+      "${CMAKE_SOURCE_DIR}"
+      "${CMAKE_SOURCE_DIR}/libdjvu"
+      "${CMAKE_BINARY_DIR}/generated")
+  target_link_libraries(libdjvu_gtest PRIVATE djvulibre ${DJVULIBRE_GTEST_TARGET})
+  if(TARGET GTest::gtest_main)
+    target_link_libraries(libdjvu_gtest PRIVATE GTest::gtest_main)
+  endif()
+  if(Threads_FOUND)
+    target_link_libraries(libdjvu_gtest PRIVATE Threads::Threads)
+  endif()
+  djvulibre_set_output_dirs(libdjvu_gtest)
+  add_test(NAME libdjvu_gtest COMMAND libdjvu_gtest --gtest_color=yes)
+  set_tests_properties(libdjvu_gtest PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+endif()
