@@ -52,7 +52,6 @@ jobs:
   # -----------------------------------------------------------------------
   windows:
     name: Windows ${{ matrix.config }}
-    if: false  # temporarily disabled — debugging Linux first
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -132,7 +131,6 @@ jobs:
   # -----------------------------------------------------------------------
   windows-arm64:
     name: Windows ARM64 ${{ matrix.config }}
-    if: false  # temporarily disabled — debugging Linux first
     runs-on: windows-11-arm
     strategy:
       fail-fast: false
