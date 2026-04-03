@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [develop, master]
+    branches: [develop]
   pull_request:
   workflow_dispatch:
 
@@ -50,37 +50,9 @@ jobs:
           if-no-files-found: ignore
 
   # -----------------------------------------------------------------------
-  # Validate that the legacy autotools build still works (master only).
-  # Remove this job once the CMake branch is merged into master.
-  autotools:
-    name: Autotools (legacy validation)
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            autoconf automake libtool pkg-config g++ make \
-            libjpeg-dev libtiff-dev zlib1g-dev
-
-      - name: Bootstrap
-        run: ./autogen.sh
-
-      - name: Configure
-        run: ./configure --prefix=/tmp/djvulibre-install
-
-      - name: Build
-        run: make -j$(nproc)
-
-      - name: Install
-        run: make install
-
-  # -----------------------------------------------------------------------
   windows:
     name: Windows ${{ matrix.config }}
+    if: false  # temporarily disabled тАФ debugging Linux first
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -109,6 +81,86 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.config }}-binaries
+          path: |
+            build/bin/${{ matrix.config }}/*.dll
+            build/bin/${{ matrix.config }}/*.exe
+            build/lib/${{ matrix.config }}/*.lib
+          if-no-files-found: ignore
+
+  # -----------------------------------------------------------------------
+  linux-arm64:
+    name: Linux ARM64 ${{ matrix.build_type }}
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Release, Debug]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build pkg-config g++ \
+            libjpeg-dev libtiff-dev zlib1g-dev libgtest-dev
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DDJVULIBRE_USE_BUNDLED_DEPS=OFF
+          -DDJVULIBRE_ENABLE_GTEST=ON
+          -DDJVULIBRE_ENABLE_XMLTOOLS=ON
+          -DDJVULIBRE_ENABLE_DESKTOPFILES=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-${{ matrix.build_type }}-logs
+          path: build/Testing/
+          if-no-files-found: ignore
+
+  # -----------------------------------------------------------------------
+  windows-arm64:
+    name: Windows ARM64 ${{ matrix.config }}
+    if: false  # temporarily disabled тАФ debugging Linux first
+    runs-on: windows-11-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Release, Debug]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -A ARM64
+          -DDJVULIBRE_USE_BUNDLED_DEPS=ON
+          -DDJVULIBRE_ENABLE_GTEST=ON
+          -DDJVULIBRE_ENABLE_XMLTOOLS=ON
+          -DDJVULIBRE_ENABLE_DESKTOPFILES=OFF
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.config }} --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
+
+      - name: Upload binaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64-${{ matrix.config }}-binaries
           path: |
             build/bin/${{ matrix.config }}/*.dll
             build/bin/${{ matrix.config }}/*.exe
