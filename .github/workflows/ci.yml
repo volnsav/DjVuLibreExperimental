@@ -39,7 +39,7 @@ jobs:
         run: cmake --build build --parallel
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure --parallel
 
       - name: Upload test logs
         if: always()
@@ -73,13 +73,17 @@ jobs:
         run: cmake --build build --config ${{ matrix.config }} --parallel
 
       - name: Test
-        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
+        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure --parallel
 
-      - name: Upload binaries
+      - name: Upload test logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-${{ matrix.config }}-binaries
+          name: windows-${{ matrix.config }}-logs
+          path: build/Testing/
+          if-no-files-found: ignore
+
+      - name: Upload binaries
           path: |
             build/bin/${{ matrix.config }}/*.dll
             build/bin/${{ matrix.config }}/*.exe
@@ -118,7 +122,7 @@ jobs:
         run: cmake --build build --parallel
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure --parallel
 
       - name: Upload test logs
         if: always()
@@ -152,7 +156,15 @@ jobs:
         run: cmake --build build --config ${{ matrix.config }} --parallel
 
       - name: Test
-        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure
+        run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure --parallel
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64-${{ matrix.config }}-logs
+          path: build/Testing/
+          if-no-files-found: ignore
 
       - name: Upload binaries
         if: always()
